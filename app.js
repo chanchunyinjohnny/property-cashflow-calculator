@@ -16,6 +16,12 @@ const STORAGE_KEY = 'property-cashflow-saved-v1';
 const HORIZONS = [3, 5, 10];
 const scalarSpecs = FIELD_SPECS.filter((s) => !['holding_years','sale_price_change'].includes(s.key));
 const knownKeys = Object.keys(presetA());
+// Fields added in the 2026-09-20 Hong Kong rule review. Scenarios saved earlier lack them,
+// so they are filled with neutral defaults instead of rejecting the whole scenario.
+const ADDED_KEYS = ['bank_valuation', 'mortgage_exit_fee_years', 'pa_marginal_rate'];
+// Rows that only matter when personal assessment is switched on.
+const PA_ROWS = new Set(['net_assessable_value', 'pa_deductible_interest', 'cash_tax', 'leveraged_tax']);
+const usesPa = (inputs) => inputs.pa_marginal_rate > 0;
 let dirty = false;
 let saved = [];
 let activeSavedId = '';
@@ -63,8 +69,11 @@ function readSnapshot(raw) {
       } else if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error('輸入必須是有限數值或留白。');
     }
   };
-  checkValues(raw.base, false); checkValues(raw.overrides, true);
-  const next = { version: 1, base: clone(raw.base), overrides: clone(raw.overrides) };
+  const base = raw.base && typeof raw.base === 'object' && !Array.isArray(raw.base)
+    ? { ...Object.fromEntries(ADDED_KEYS.filter((key) => !Object.hasOwn(raw.base, key)).map((key) => [key, presetA()[key]])), ...raw.base }
+    : raw.base;
+  checkValues(base, false); checkValues(raw.overrides, true);
+  const next = { version: 1, base: clone(base), overrides: clone(raw.overrides) };
   for (const key of ['extra_works','lease_counts','letting_counts']) {
     if (Array.isArray(next.base[key]) && next.base[key].length === 5) next.base[key].push(...Array(5).fill(0));
     if (Array.isArray(next.overrides[key]) && next.overrides[key].length === 5) next.overrides[key].push(...Array(5).fill(0));
@@ -169,12 +178,15 @@ function signChanges(values) {
 function renderQuick() {
   const horizons = yearlyExits(state.base);
   const r = horizons.find((r) => r.inputs.holding_years === 5) || horizons[1];
-  $('quick-assumptions-summary').textContent = `按揭 ${pct(state.base.ltv)} · 固定 ${pct(state.base.mortgage_rate)} · ${state.base.mortgage_years} 年 · 樓價每年 ${pct(state.base.sale_price_growth)}`;
-  $('derived-summary').textContent = `假設算例｜首年無租 ${state.base.first_year_vacancy_months} 個月，其後每年空置 ${state.base.annual_vacancy_months} 個月；${state.base.rateable_value === null ? '自動估算' : '手動設定'} RV ${money(r.inputs.rateable_value)}${state.base.rateable_value === null ? '（月租 × 12，並非正式差餉租值）' : ''}。租金及年度成本全期固定，按息亦假設全期不變。`;
+  const pa = usesPa(state.base);
+  // Only mention the valuation when it actually cuts the loan (below the price).
+  const valuation = state.base.bank_valuation > 0 && state.base.bank_valuation < state.base.purchase_price ? ` · 估價 ${wan(state.base.bank_valuation)} 萬` : '';
+  $('quick-assumptions-summary').textContent = `按揭 ${pct(state.base.ltv)}${valuation} · 固定 ${pct(state.base.mortgage_rate)} · ${state.base.mortgage_years} 年 · 樓價每年 ${pct(state.base.sale_price_growth)}`;
+  $('derived-summary').textContent = `假設算例｜首年無租 ${state.base.first_year_vacancy_months} 個月，其後每年空置 ${state.base.annual_vacancy_months} 個月；${state.base.rateable_value === null ? '自動估算' : '手動設定'} RV ${money(r.inputs.rateable_value)}${state.base.rateable_value === null ? '（月租 × 12，並非正式差餉租值）' : ''}。租金及年度成本全期固定，按息亦假設全期不變。${pa ? `稅務：按揭口徑以個人入息課稅（邊際 ${pct(state.base.pa_marginal_rate)}）扣出租期利息，與普通物業稅取較低者。` : '稅務：只計普通物業稅；有按揭可在詳細假設填個人入息課稅邊際稅率比較。'}`;
   const metrics = [
     ['買入時自有資金',`${precise.format(r.initial_equity / 10000)} 萬`,'首期、費用及裝修；未含備用金'],
-    ['每月供樓',money(r.monthly_payment),'本息攤還'],
-    ['首年平均每月補貼',money(r.first_year_monthly_subsidy),'物業稅及供款後，全年平均'],
+    ['每月供樓',money(r.monthly_payment),`本息攤還；DSR 50% 約需月入 ${money(r.min_monthly_income_dsr)}`],
+    ['首年平均每月補貼',money(r.first_year_monthly_subsidy),`${pa ? '稅款' : '物業稅'}及供款後，全年平均`],
   ];
   $('quick-metrics').innerHTML = metrics.map(([label,value,note]) => `<div><div class="quick-metric-label">${label}</div><div class="quick-metric-value">${value}</div><div class="quick-metric-note">${note}</div></div>`).join('');
   const actualRows = (result) => result.annual.slice(0,result.inputs.holding_years);
@@ -191,14 +203,14 @@ function renderQuick() {
   $('horizons-table').innerHTML = `<table class="horizon-table"><thead><tr><th>金額：HKD 萬</th>${horizons.map((v) => `<th>${v.inputs.holding_years} 年</th>`).join('')}</tr></thead><tbody>${rows.map(([label,get,format,cls='']) => `<tr class="${cls}"><th>${label}</th>${horizons.map((v) => `<td class="${color(get(v))}">${format(get(v))}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
   const missing = horizons.filter((v) => v.leveraged_after_tax.irr === null).map((v) => `${v.inputs.holding_years} 年`);
   $('quick-irr-note').textContent = missing.length ? `${missing.join('、')}的現金流無唯一可顯示 IRR；可於詳細比較查看 NPV。` : '年化回報採年末現金流近似；並非按實際日期計算。累計自有資金投入未扣回中途分派的盈餘。';
-  $('included-costs').innerHTML = `<summary>已計入哪些成本 <span>費率、金額均可在詳細假設修改</span></summary><p>管理費 ${money(state.base.annual_management / 12)}／月、保險 ${money(state.base.annual_insurance)}／年、日常維修 ${money(state.base.annual_maintenance)}／年、預計更新／大修支出 ${money(state.base.annual_major_repairs)}／年（當年花掉）。另計買入 AVD ${money(r.purchase_stamp_duty)}、差餉 ${money(r.annual_rates)}／年、地租、物業稅、租約印花稅、招租佣金、買賣代理及律師雜費。額外工程只填超出上述維修的支出；預算並非已取得的報價。</p>`;
+  $('included-costs').innerHTML = `<summary>已計入哪些成本 <span>費率、金額均可在詳細假設修改</span></summary><p>管理費 ${money(state.base.annual_management / 12)}／月、保險 ${money(state.base.annual_insurance)}／年、日常維修 ${money(state.base.annual_maintenance)}／年、預計更新／大修支出 ${money(state.base.annual_major_repairs)}／年（當年花掉）。另計買入 AVD ${money(r.purchase_stamp_duty)}、差餉 ${money(r.annual_rates)}／年、地租、${pa ? '物業稅或個人入息課稅（較低者）' : '物業稅'}、租約印花稅、招租佣金、買賣代理及律師雜費。額外工程只填超出上述維修的支出；預算並非已取得的報價。</p>`;
 }
 
 const returnRows = [
   ['按揭 · 稅前 IRR', (r) => r.leveraged_before_tax.irr, pct],
-  ['按揭 · 物業稅後 IRR', (r) => r.leveraged_after_tax.irr, pct, 'key-row'],
+  ['按揭 · 稅後 IRR', (r) => r.leveraged_after_tax.irr, pct, 'key-row'],
   ['全現金 · 稅前 IRR', (r) => r.cash_before_tax.irr, pct],
-  ['全現金 · 物業稅後 IRR', (r) => r.cash_after_tax.irr, pct],
+  ['全現金 · 稅後 IRR', (r) => r.cash_after_tax.irr, pct],
   ['按揭 · 稅前 NPV', (r) => r.leveraged_before_tax.npv, money],
   ['全現金 · 稅前 NPV', (r) => r.cash_before_tax.npv, money],
 ];
@@ -207,11 +219,13 @@ function compareTable(rows) {
   return `<table class="comparison-table"><thead><tr><th>第 5 年退出</th>${columns.map(([,name]) => `<th>${name}</th>`).join('')}</tr></thead><tbody>${rows.map(([label,get,format=money,cls='']) => `<tr class="${cls}"><th>${label}</th>${columns.map(([key]) => { const value=get(results[key]); return `<td class="${key==='original'?'original-cell ':''}${color(value)}">${format(value)}</td>`; }).join('')}</tr>`).join('')}</tbody></table>`;
 }
 function renderOverview() {
-  $('scenario-summaries').innerHTML = ['a','b'].map((key) => { const r=results[key]; return `<article class="scenario-summary"><div class="scenario-label"><span class="scenario-badge ${key}">${key.toUpperCase()}</span>${key==='a'?'共同假設':'差異方案'}<span class="scenario-tag">5 年退出</span></div><div class="scenario-topline"><div><div class="headline-value ${color(r.leveraged_after_tax.irr)}">${pct(r.leveraged_after_tax.irr)}</div><div class="headline-caption">按揭 · 物業稅後年化 IRR</div></div><div><div>${money(r.leveraged_after_tax.total_profit)}</div><div class="headline-caption">持有期總盈虧</div></div></div><p class="summary-meta">樓價 <strong>${money(r.inputs.purchase_price)}</strong> · 月租 <strong>${money(r.inputs.monthly_rent)}</strong><br>假設售價 <strong>${money(r.sale_price)}</strong> · 比較門檻 <strong>${pct(r.inputs.benchmark_rate)}</strong></p></article>`; }).join('');
+  $('scenario-summaries').innerHTML = ['a','b'].map((key) => { const r=results[key]; return `<article class="scenario-summary"><div class="scenario-label"><span class="scenario-badge ${key}">${key.toUpperCase()}</span>${key==='a'?'共同假設':'差異方案'}<span class="scenario-tag">5 年退出</span></div><div class="scenario-topline"><div><div class="headline-value ${color(r.leveraged_after_tax.irr)}">${pct(r.leveraged_after_tax.irr)}</div><div class="headline-caption">按揭 · 稅後年化 IRR</div></div><div><div>${money(r.leveraged_after_tax.total_profit)}</div><div class="headline-caption">持有期總盈虧</div></div></div><p class="summary-meta">樓價 <strong>${money(r.inputs.purchase_price)}</strong> · 月租 <strong>${money(r.inputs.monthly_rent)}</strong><br>假設售價 <strong>${money(r.sale_price)}</strong> · 比較門檻 <strong>${pct(r.inputs.benchmark_rate)}</strong></p></article>`; }).join('');
   $('returns-table').innerHTML = compareTable(returnRows);
   $('funding-table').innerHTML = compareTable([
     ['買入時自有資金',(r)=>r.initial_equity],['全現金取得成本',(r)=>r.acquisition_cost],
-    ['每月供款',(r)=>r.monthly_payment],['首年平均每月補貼',(r)=>r.first_year_monthly_subsidy],
+    ['貸款額',(r)=>r.loan_amount],
+    ['每月供款',(r)=>r.monthly_payment],['DSR 50% 所需月入',(r)=>r.min_monthly_income_dsr],
+    ['首年平均每月補貼',(r)=>r.first_year_monthly_subsidy],
     ['出售時貸款餘額',(r)=>r.loan_at_exit],['出售後淨收款',(r)=>r.leveraged_sale_proceeds],
   ]);
   const zero={}; for(const key of ['a','b','original']) zero[key]=calculate({...inputsFor(key),holding_years:5,benchmark_rate:0});
@@ -247,19 +261,22 @@ function renderChart() {
 const ANNUAL_ROWS=[
   ['收租與營運',null],['合約月租','monthly_rent'],['實收租金月數','rent_months','number'],['實收租金','rental_income'],
   ['成本明細（支出以正數顯示）',null],['管理費','management_fee'],['差餉','rates'],['地租','government_rent'],['保險','insurance'],['日常維修','maintenance'],['預計更新／大修支出（當年花掉）','major_repairs'],['招租佣金','letting_commission'],['額外工程（超出已計成本）','extra_works'],['租約印花稅','lease_stamp_duty'],['營運成本合計','operating_costs','total'],['普通個人物業稅','property_tax'],
-  ['現金與融資',null],['稅前、供款前淨現金','operating_before_tax'],['稅後、供款前淨現金','operating_after_tax'],['期初貸款','loan_opening'],['全年供款','debt_service'],['其中利息','interest'],['其中還本金','principal'],['期末貸款','loan_closing'],['按揭供款後現金（稅前）','leveraged_before_tax','total'],['按揭供款後現金（稅後）','leveraged_after_tax','total'],
+  ['應評稅淨值 NAV','net_assessable_value'],['個人入息課稅可扣利息（出租月份，≤NAV）','pa_deductible_interest'],['全現金口徑稅款（較低者）','cash_tax'],['按揭口徑稅款（較低者）','leveraged_tax'],
+  ['現金與融資',null],['稅前、供款前淨現金','operating_before_tax'],['稅後、供款前淨現金（全現金口徑）','operating_after_tax'],['期初貸款','loan_opening'],['全年供款','debt_service'],['其中利息','interest'],['其中還本金','principal'],['期末貸款','loan_closing'],['按揭供款後現金（稅前）','leveraged_before_tax','total'],['按揭供款後現金（稅後）','leveraged_after_tax','total'],
   ['年末出售',null],['出售價','sale_price'],['售樓成本（不含還貸）','selling_costs'],['清還費／退回回贈','loan_exit_fee'],['售樓淨回款（全現金）','cash_sale_proceeds'],['售樓淨回款（按揭）','leveraged_sale_proceeds'],
-  ['IRR 採用的完整現金流',null],['全現金 · 稅前','cash_before_tax_flow','flow'],['全現金 · 物業稅後','cash_after_tax_flow','flow'],['按揭 · 稅前','leveraged_before_tax_flow','flow'],['按揭 · 物業稅後','leveraged_after_tax_flow','flow'],
+  ['IRR 採用的完整現金流',null],['全現金 · 稅前','cash_before_tax_flow','flow'],['全現金 · 稅後','cash_after_tax_flow','flow'],['按揭 · 稅前','leveraged_before_tax_flow','flow'],['按揭 · 稅後','leveraged_after_tax_flow','flow'],
 ];
+// Hide the personal-assessment rows unless that option is used, to keep the table short.
+function annualRowsFor(r){return ANNUAL_ROWS.filter(([,key])=>!PA_ROWS.has(key)||usesPa(r.inputs));}
 function annualValue(r,row,key){ return key==='monthly_rent'?r.inputs.monthly_rent:row[key]; }
 function initialValue(r,key){return key?.startsWith('cash_')&&key.endsWith('_flow')?-r.acquisition_cost:key?.startsWith('leveraged_')&&key.endsWith('_flow')?-r.initial_equity:null;}
 function selectedAnnual(){return horizonResult(inputsFor($('annual-scenario').value),Number($('detail-horizon').value));}
 function renderAnnual() {
   const r=selectedAnnual(),annual=r.annual.slice(0,r.inputs.holding_years);
-  $('annual-table').innerHTML=`<table class="annual-table"><thead><tr><th>現金流項目 · HKD</th><th>第 0 年</th>${annual.map((row)=>`<th>第 ${row.year} 年</th>`).join('')}</tr></thead><tbody>${ANNUAL_ROWS.map(([label,key,type])=>!key?`<tr class="group-row"><th>${label}</th>${'<td></td>'.repeat(annual.length+1)}</tr>`:`<tr class="${type==='flow'?'cashflow-row':type==='total'?'total-row':''}"><th>${label}</th><td>${initialValue(r,key)===null?'—':money(initialValue(r,key))}</td>${annual.map((row)=>{const v=annualValue(r,row,key);return `<td class="${color(v)}">${type==='number'?precise.format(v):money(v)}</td>`;}).join('')}</tr>`).join('')}</tbody></table>`;
+  $('annual-table').innerHTML=`<table class="annual-table"><thead><tr><th>現金流項目 · HKD</th><th>第 0 年</th>${annual.map((row)=>`<th>第 ${row.year} 年</th>`).join('')}</tr></thead><tbody>${annualRowsFor(r).map(([label,key,type])=>!key?`<tr class="group-row"><th>${label}</th>${'<td></td>'.repeat(annual.length+1)}</tr>`:`<tr class="${type==='flow'?'cashflow-row':type==='total'?'total-row':''}"><th>${label}</th><td>${initialValue(r,key)===null?'—':money(initialValue(r,key))}</td>${annual.map((row)=>{const v=annualValue(r,row,key);return `<td class="${color(v)}">${type==='number'?precise.format(v):money(v)}</td>`;}).join('')}</tr>`).join('')}</tbody></table>`;
   $('exit-table').innerHTML=`<table><thead><tr><th>持有期</th><th>預計售價</th><th>按揭稅前 IRR</th><th>按揭稅後 IRR</th><th>全現金稅後 IRR</th><th>按揭稅前 NPV</th></tr></thead><tbody>${yearlyExits(inputsFor($('annual-scenario').value)).map((v)=>`<tr><th>${v.inputs.holding_years} 年</th><td>${money(v.sale_price)}</td><td>${pct(v.leveraged_before_tax.irr)}</td><td>${pct(v.leveraged_after_tax.irr)}</td><td>${pct(v.cash_after_tax.irr)}</td><td>${money(v.leveraged_before_tax.npv)}</td></tr>`).join('')}</tbody></table>`;
   const d=r.lease_duty;
-  const feeRows=[['買入樓價',r.inputs.purchase_price],['印花稅計稅值',r.purchase_duty_base],['買入從價印花稅 AVD',r.purchase_stamp_duty],['買入代理佣金',r.inputs.purchase_price*r.inputs.buying_commission_rate],['買入律師及雜費',r.inputs.buying_legal_fees],['初始裝修',r.inputs.renovation_cost],['全包取得成本',r.acquisition_cost],['每份租約全期租金',d.total_rent],['租約稅基（向上整百）',d.rounded_tax_base],['正本租約印花稅',d.original_duty],['副本印花稅合計',d.copy_duty],['每份租約連副本',d.total_duty],['每份租約業主承擔',d.landlord_duty],['持有期租約稅（業主）',annual.reduce((s,v)=>s+v.lease_stamp_duty,0)]];
+  const feeRows=[['買入樓價',r.inputs.purchase_price],['印花稅計稅值',r.purchase_duty_base],['買入從價印花稅 AVD',r.purchase_stamp_duty],['買入代理佣金',r.inputs.purchase_price*r.inputs.buying_commission_rate],['買入律師及雜費',r.inputs.buying_legal_fees],['初始裝修',r.inputs.renovation_cost],['全包取得成本',r.acquisition_cost],['按揭計算基礎（樓價與估價較低者）',r.lending_value],['貸款額',r.loan_amount],['買入時自有資金',r.initial_equity],['每份租約全期租金',d.total_rent],['租約稅基（向上整百）',d.rounded_tax_base],['正本租約印花稅',d.original_duty],['副本印花稅合計',d.copy_duty],['每份租約連副本',d.total_duty],['每份租約業主承擔',d.landlord_duty],['持有期租約稅（業主）',annual.reduce((s,v)=>s+v.lease_stamp_duty,0)]];
   $('fees-table').innerHTML=`<table><thead><tr><th>項目</th><th>HKD</th></tr></thead><tbody>${feeRows.map(([label,value])=>`<tr><th>${label}</th><td>${precise.format(value)}</td></tr>`).join('')}</tbody></table>`;
 }
 
@@ -334,7 +351,7 @@ function download(name,text,type){const url=URL.createObjectURL(new Blob([text],
 function exportCsv(){
   const r=selectedAnnual(),annual=r.annual.slice(0,r.inputs.holding_years);
   const quote=(v)=>`"${String(v??'').replace(/"/g,'""')}"`;
-  const rows=[['方案', $('annual-scenario').value.toUpperCase()],['金額單位','HKD'],['持有年數',r.inputs.holding_years],['項目','第0年',...annual.map((v)=>`第${v.year}年`)],...ANNUAL_ROWS.filter(([,key])=>key).map(([label,key])=>[label,initialValue(r,key),...annual.map((row)=>annualValue(r,row,key))])];
+  const rows=[['方案', $('annual-scenario').value.toUpperCase()],['金額單位','HKD'],['持有年數',r.inputs.holding_years],['項目','第0年',...annual.map((v)=>`第${v.year}年`)],...annualRowsFor(r).filter(([,key])=>key).map(([label,key])=>[label,initialValue(r,key),...annual.map((row)=>annualValue(r,row,key))])];
   download(`property-cashflow-${$('annual-scenario').value}-${r.inputs.holding_years}y.csv`,'\uFEFF'+rows.map((row)=>row.map(quote).join(',')).join('\r\n'),'text/csv;charset=utf-8');
 }
 

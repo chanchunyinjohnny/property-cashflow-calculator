@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {calculate,presetA,presetB,presetOriginal,recommendedDefaults,mergeOverrides,
   inputsFromDict,inputsToDict,validateInputs,purchaseStampDuty,progressiveRates,
-  leaseStampDuty,monthlyPayment,annualIrr,npv,yearlyExits,sensitivity} from './model.js';
+  leaseStampDuty,monthlyPayment,annualIrr,npv,yearlyExits,sensitivity,DSR_LIMIT_NON_SELF_USE} from './model.js';
 
 // These values were extracted read-only from the source workbook's cached
 // formulas before its redesign. The app never needs the private XLSX file.
@@ -33,14 +33,16 @@ test('new automatic defaults match independently calculated 3/5/10-year returns'
 });
 
 test('all cashflow and amortization identities hold without double-counting principal',()=>{
-  for(const raw of [presetA(),presetB(),presetOriginal(),{...presetA(),holding_years:10,mortgage_years:3,mortgage_exit_fee:30000}]) {
+  for(const raw of [presetA(),presetB(),presetOriginal(),{...presetA(),holding_years:10,mortgage_years:3,mortgage_exit_fee:30000},
+    {...presetA(),pa_marginal_rate:0.17,bank_valuation:3800000,holding_years:3,mortgage_exit_fee:56000}]) {
     const r=calculate(raw);
     for(const row of r.annual) {
       close(row.debt_service,row.interest+row.principal);
       close(row.loan_opening-row.principal,row.loan_closing);
       close(row.operating_costs,sumCosts(row));
-      close(row.operating_after_tax,row.rental_income-row.operating_costs-row.property_tax);
-      close(row.leveraged_after_tax,row.operating_after_tax-row.debt_service);
+      close(row.operating_after_tax,row.rental_income-row.operating_costs-row.cash_tax);
+      close(row.leveraged_after_tax,row.rental_income-row.operating_costs-row.leveraged_tax-row.debt_service);
+      assert.ok(row.cash_tax<=row.property_tax+1e-9&&row.leveraged_tax<=row.property_tax+1e-9);
       assert.ok(row.loan_closing>=0);
     }
     const final=r.annual[r.inputs.holding_years-1];
@@ -73,7 +75,7 @@ test('zero and tiny rates amortize correctly and stop at contractual maturity',(
 
 test('repayment fees, purchase costs, extra works and property tax remain in the correct cashflows',()=>{
   const base=calculate(presetA());
-  const changed=calculate({...presetA(),buying_legal_fees:25000,mortgage_exit_fee:20000,
+  const changed=calculate({...presetA(),buying_legal_fees:25000,mortgage_exit_fee:20000,mortgage_exit_fee_years:5,
     extra_works:[10000,0,0,0,0,0,0,0,0,0]});
   close(changed.initial_equity-base.initial_equity,10000);
   close(changed.leveraged_sale_proceeds-base.leveraged_sale_proceeds,-20000);
@@ -81,7 +83,7 @@ test('repayment fees, purchase costs, extra works and property tax remain in the
   close(changed.annual[0].property_tax,base.annual[0].property_tax);
   const expensiveLoan=calculate({...presetA(),mortgage_rate:0.1});
   close(expensiveLoan.annual[0].property_tax,base.annual[0].property_tax);
-  const paidOff=calculate({...presetA(),mortgage_years:2,mortgage_exit_fee:20000});
+  const paidOff=calculate({...presetA(),mortgage_years:2,mortgage_exit_fee:20000,mortgage_exit_fee_years:5});
   assert.equal(paidOff.annual[4].loan_exit_fee,0);
 });
 
@@ -149,7 +151,8 @@ test('same annual house-price growth compounds correctly for 3/5/10 exits',()=>{
 });
 
 test('required sale price solves the pretax hurdle including interim subsidies and exit fee',()=>{
-  const raw={...presetA(),holding_years:10,mortgage_exit_fee:45000,extra_works:[0,0,100000,0,0,0,0,0,0,0]};
+  const raw={...presetA(),holding_years:10,mortgage_exit_fee:45000,mortgage_exit_fee_years:10,extra_works:[0,0,100000,0,0,0,0,0,0,0]};
+  assert.equal(calculate(raw).annual[9].loan_exit_fee,45000);
   const r=calculate(raw);
   const mortgage=calculate({...raw,sale_price_change:r.required_sale_price_leveraged/raw.purchase_price-1});
   const cash=calculate({...raw,sale_price_change:r.required_sale_price_cash/raw.purchase_price-1});
@@ -187,6 +190,8 @@ test('invalid and hostile imports fail before calculation',()=>{
     {lease_rent_free_months:25},{landlord_duty_share:1.1},
     {extra_works:[0,0]},{lease_counts:[1,null,1,0,1]},
     {property_tax_rate:2},{monthly_rent:'17000'},{ltv:true},
+    {mortgage_years:31},{pa_marginal_rate:0.2},{pa_marginal_rate:-0.01},{bank_valuation:-1},
+    {mortgage_exit_fee_years:-1},{mortgage_exit_fee_years:1.5},{mortgage_exit_fee_years:31},
   ]) {
     const raw={...presetA(),...change};
     assert.ok(validateInputs(raw).length>0,JSON.stringify(change));
@@ -200,4 +205,71 @@ test('invalid and hostile imports fail before calculation',()=>{
   assert.throws(()=>monthlyPayment(1,0,-1));
   assert.throws(()=>npv(-1,[-100,110]));
   assert.throws(()=>inputsFromDict(null));
+});
+
+test('HKMA limits: tenor at most 30 years and LTV at most 70%, with plain-language errors',()=>{
+  assert.deepEqual(validateInputs({...presetA(),mortgage_years:30}),[]);
+  assert.match(validateInputs({...presetA(),mortgage_years:31}).join(''),/30 年/);
+  assert.match(validateInputs({...presetA(),ltv:0.71}).join(''),/70%/);
+  assert.throws(()=>calculate({...presetA(),mortgage_years:40}),/30 年/);
+});
+
+test('early-repayment charge applies only when the sale falls inside the lock-in period',()=>{
+  const fee={...presetA(),mortgage_exit_fee:56000};
+  const exits=yearlyExits(fee);
+  assert.deepEqual(exits.map(r=>r.annual[r.inputs.holding_years-1].loan_exit_fee),[56000,0,0]);
+  const base=yearlyExits(presetA());
+  close(base[0].leveraged_sale_proceeds-exits[0].leveraged_sale_proceeds,56000);
+  close(exits[1].leveraged_sale_proceeds,base[1].leveraged_sale_proceeds);
+  assert.deepEqual(yearlyExits({...fee,mortgage_exit_fee_years:0}).map(r=>r.loan_at_exit>0&&r.annual[r.inputs.holding_years-1].loan_exit_fee),[0,0,0]);
+  assert.deepEqual(yearlyExits({...fee,mortgage_exit_fee_years:10}).map(r=>r.annual[r.inputs.holding_years-1].loan_exit_fee),[56000,56000,56000]);
+  // The pre-tax hurdle price still solves exactly when the charge applies.
+  const r=calculate({...fee,holding_years:3});
+  close(calculate({...fee,holding_years:3,sale_price_change:r.required_sale_price_leveraged/fee.purchase_price-1}).leveraged_before_tax.npv,0);
+});
+
+test('bank valuation below price lowers the loan; a higher valuation does not raise it',()=>{
+  const base=calculate(presetA());
+  const short=calculate({...presetA(),bank_valuation:3800000});
+  assert.equal(short.lending_value,3800000);
+  close(short.loan_amount,2660000);
+  close(short.initial_equity-base.initial_equity,140000);
+  close(short.acquisition_cost,base.acquisition_cost);
+  const high=calculate({...presetA(),bank_valuation:5000000});
+  assert.equal(high.loan_amount,base.loan_amount);
+  assert.equal(calculate({...presetA(),bank_valuation:0}).loan_amount,2800000);
+});
+
+test('personal assessment deducts let-month interest capped at NAV and never exceeds property tax',()=>{
+  const base=calculate(presetA());
+  // 0% keeps the previous ordinary-property-tax model exactly.
+  assert.deepEqual(calculate({...presetA(),pa_marginal_rate:0}),base);
+  const pa=calculate({...presetA(),pa_marginal_rate:0.15});
+  const y1=pa.annual[0];
+  close(y1.net_assessable_value,(153000-10200)*0.8);
+  close(y1.property_tax,17136);
+  close(y1.pa_deductible_interest,base.annual[0].interest*9/12);
+  close(y1.leveraged_tax,(y1.net_assessable_value-y1.pa_deductible_interest)*0.15);
+  close(y1.cash_tax,17136);
+  assert.ok(pa.leveraged_after_tax.irr>base.leveraged_after_tax.irr);
+  assert.deepEqual(pa.leveraged_before_tax,base.leveraged_before_tax);
+  assert.deepEqual(pa.cash_after_tax,base.cash_after_tax);
+  // A low marginal rate helps even without interest; a high rate with little interest falls back.
+  close(calculate({...presetA(),pa_marginal_rate:0.02}).annual[1].cash_tax,calculate(presetA()).annual[1].net_assessable_value*0.02);
+  const cheapLoan=calculate({...presetA(),pa_marginal_rate:0.17,mortgage_rate:0.001});
+  cheapLoan.annual.forEach(row=>close(row.leveraged_tax,row.property_tax));
+  // Interest above NAV is capped, so tax stops at zero instead of creating a loss.
+  const dear=calculate({...presetA(),pa_marginal_rate:0.17,mortgage_rate:0.08});
+  close(dear.annual[0].pa_deductible_interest,dear.annual[0].net_assessable_value);
+  close(dear.annual[0].leveraged_tax,0);
+  // Without a mortgage there is no interest to deduct.
+  const cash=calculate({...presetA(),ltv:0,pa_marginal_rate:0.17});
+  cash.annual.forEach(row=>close(row.leveraged_tax,row.property_tax));
+});
+
+test('DSR helper shows the minimum monthly income at the 50% non-self-use limit',()=>{
+  const r=calculate(presetA());
+  assert.equal(DSR_LIMIT_NON_SELF_USE,0.5);
+  close(r.min_monthly_income_dsr,r.monthly_payment/0.5);
+  assert.equal(calculate({...presetA(),ltv:0}).min_monthly_income_dsr,0);
 });

@@ -23,7 +23,7 @@
           <h1>收租樓現金流</h1>
           <p class="subtitle">睇樓時填三個數，即時計算收租現金流與回報。</p>
         </div>
-        <div class="model-stamp"><span class="status-dot" aria-hidden="true"></span>情境模型<span>模型基準 2026-09-16<br>租約稅更新 2026-09-19</span></div>
+        <div class="model-stamp"><span class="status-dot" aria-hidden="true"></span>情境模型<span>模型基準 2026-09-16<br>香港規則覆核 2026-09-20</span></div>
       </div>
 
       <div id="notification" class="notice" role="status" aria-live="polite" hidden></div>
@@ -38,14 +38,14 @@
         <details class="quick-options"><summary>按揭與售價假設 <span id="quick-assumptions-summary"></span></summary><div class="quick-finance">
           <label for="quick-ltv">按揭成數 %<input id="quick-ltv" type="number" inputmode="decimal" min="0" max="70" step="any" data-quick="ltv" data-percent="true"></label>
           <label for="quick-rate">固定按息 %／年<input id="quick-rate" type="number" inputmode="decimal" min="0" step="any" data-quick="mortgage_rate" data-percent="true"></label>
-          <label for="quick-term">還款年期<input id="quick-term" type="number" inputmode="numeric" min="1" step="1" data-quick="mortgage_years"></label>
+          <label for="quick-term">還款年期<input id="quick-term" type="number" inputmode="numeric" min="1" max="30" step="1" data-quick="mortgage_years"></label>
           <label for="quick-growth">樓價每年升跌 %<input id="quick-growth" type="number" inputmode="decimal" min="-100" step="any" data-quick="sale_price_growth" data-percent="true"></label>
         </div><p>售價預設與買價相同。各持有期按相同的年升跌率複利推算，並非樓價預測。</p></details>
         <p id="derived-summary" class="derived-summary"></p>
         <details id="included-costs" class="quick-options included-costs"></details>
         <div id="quick-errors" class="notice error" role="alert" hidden></div>
         <div id="quick-metrics" class="quick-metrics"></div>
-        <div class="section-heading"><h2>持有多久，結果有何不同</h2><span class="unit-label">方案 A · 物業稅後</span></div>
+        <div class="section-heading"><h2>持有多久，結果有何不同</h2><span class="unit-label">方案 A · 稅後</span></div>
         <p class="section-note">同時比較 3、5、10 年。總投入包括初始自有資金及持有期內需要補貼的現金。</p>
         <div id="horizons-table" class="table-scroll"></div>
         <p id="quick-irr-note" class="section-note"></p>
@@ -71,13 +71,13 @@
       <section id="panel-overview" role="tabpanel" aria-labelledby="tab-overview">
         <div id="scenario-summaries" class="scenario-summaries"></div>
         <div class="section-heading"><h2>四個口徑，一起比較</h2><label class="checkbox-label"><input type="checkbox" id="show-original"> 對照 Excel 原例</label></div>
-        <p class="section-note">IRR 包含買入投入、年度淨現金及退出回款。「稅後」僅扣普通個人物業稅。</p>
+        <p class="section-note">IRR 包含買入投入、年度淨現金及退出回款。「稅後」預設只扣普通個人物業稅；如在詳細假設填個人入息課稅邊際稅率，按揭口徑可扣出租月份的按揭利息，並與物業稅取較低者（稅務局會自動比較）。</p>
         <div id="returns-table" class="table-scroll"></div>
         <div id="irr-warnings"></div>
         <div class="dashboard-grid">
           <section>
             <div class="section-heading"><h2>每年到手現金</h2><label class="checkbox-label"><input type="checkbox" id="chart-sale"> 包括退出回款</label></div>
-            <p class="section-note">按揭、物業稅後；未包括第 0 年初始投入。負數代表當年需要補貼。</p>
+            <p class="section-note">按揭、稅後；未包括第 0 年初始投入。負數代表當年需要補貼。</p>
             <div id="cashflow-chart" class="chart-container"></div>
           </section>
           <section>
@@ -124,18 +124,33 @@
         <div class="method-grid">
           <article><h3>現金流時間</h3><p>買入交收是第 0 年，裝修一次列入初始投入。租金、營運費、供款與物業稅按年度歸集，近似在年末發生；這是年度 IRR，並非按實際日期計算的 XIRR。</p></article>
           <article><h3>租金與空置</h3><p>首年只扣裝修／招租無租月數；第 2 年起才扣每年空置。管理費、差餉及供樓在空置時照計。租金、年度成本與應課差餉租值全期固定，不自動加租。</p></article>
-          <article><h3>按揭與本金</h3><p>假設固定利率、按月攤還，沒有再融資。還本金會佔用現金，並透過較低的退出貸款餘額反映一次；不會把已還本金再加作額外回報。出租批核、估值及清還費須自行確認。</p></article>
+          <article><h3>按揭與本金</h3><p>假設固定利率、按月攤還，沒有再融資。貸款額＝樓價與銀行估價較低者 × 按揭成數（上限 70%），年期最長 30 年。還本金會佔用現金，並透過較低的退出貸款餘額反映一次；不會把已還本金再加作額外回報。清還費／回贈追討只在罰息期內出售才扣（預設 3 年）。DSR 50% 月入只作參考，未計其他債務及銀行如何計租金；出租批核及估價須向銀行確認。</p></article>
           <article><h3>IRR 與 NPV</h3><p>只在現金流恰好轉號一次、且可求解時顯示 IRR。多次轉號可能有多個答案，應改看 NPV。NPV 以各方案的比較門檻折現；正值代表高於該門檻，負值代表低於。</p></article>
-          <article><h3>物業稅與費用</h3><p>普通物業稅＝max(0, 實收租金−可扣差餉) × (1−法定扣減比例) × 稅率。沒有逐項扣管理費、按揭利息或租約稅。首年差餉可扣比例可改；未包含個人入息課稅、公司持有或出售盈利稅。</p></article>
+          <article><h3>物業稅與費用</h3><p>普通物業稅＝max(0, 實收租金−可扣差餉) × (1−法定扣減比例) × 稅率，不扣管理費、按揭利息或租約稅。選填個人入息課稅邊際稅率後，按揭口徑稅款＝max(0, NAV − 出租月份利息) × 邊際稅率，利息扣減以該物業 NAV 為上限，再與普通物業稅取較低者。這是單一邊際稅率近似，並非完整個人稅單；未包含公司持有或出售盈利稅。首年差餉可扣比例可改。</p></article>
           <article><h3>租約與維修</h3><p>租約免租期只調整印花稅；實收租金由空置月數控制，避免重複扣租。更改租期後，請自行核對每年簽約份數。大修預留當作會花掉，未用餘額不自動退回；額外工程只填超出預留的支出。</p></article>
         </div>
+        <div class="section-heading"><h2>使用時要注意</h2><span class="unit-label">模型未計或已簡化</span></div>
+        <ol class="caveat-list">
+          <li><strong>租金及年度成本全期固定</strong>，不會自動加租。長年期結果對租金很敏感：預設單位如租金每年升或跌 2%，10 年按揭稅後 IRR 約相差 0.7–0.8 個百分點。</li>
+          <li><strong>按息全期固定。</strong>香港常見的是 H 按；銀行定息例子只固定首 3 或 5 年，之後浮動。請填預期平均利率，並在敏感度分頁看 ±1%／±2%。</li>
+          <li><strong>自動 RV＝月租 × 12。</strong>差餉租值假設租客自付差餉，若租金已包差餉，實際 RV 可能較低；應以差餉單上的 RV 覆寫。</li>
+          <li><strong>首張物業稅單</strong>通常包括上一年稅款及下一年暫繳稅，約為一年稅款的兩倍，出租第一年要預留現金。</li>
+          <li><strong>銀行現金回贈</strong>未計入收入；只在罰息期內出售時計追討。</li>
+          <li><strong>續租佣金：</strong>預設每次簽約都付半個月佣金。同一租客直接續租，可把該年「招租佣金次數」改為 0。</li>
+          <li><strong>地租 3%</strong> 只適用於相關地契；不適用的舊地契可填 0。</li>
+          <li><strong>連租約出售：</strong>預設在第 3、5 年初簽新兩年租約，於該年底出售時租約尚未完結。業主不能單因出售便終止普通固定租約，買家群及售價可能受影響。</li>
+          <li><strong>出售利潤當作資本增值，未計利得稅。</strong>如稅務局按客觀證據認定買入時意圖轉售圖利（炒賣），利潤要交利得稅（個人首 200 萬 7.5%，其餘 15%），稅後 IRR 會高估。見<a href="https://www.ird.gov.hk/eng/faq/pty_tran.htm" target="_blank" rel="noopener noreferrer">稅務局物業交易 FAQ</a>。</li>
+        </ol>
         <div class="section-heading"><h2>模型來源</h2></div>
-        <p>基於 <strong>Buy-to-Let-Calculator-Linked.xlsx</strong> 的原例與 A／B 輸入改編，模型基準為 <strong>2026-09-16</strong>，租約稅更新為 <strong>2026-09-19</strong>。<strong>2026-09-20 簡化版</strong>加入 3／5／10 年比較、自動估算 RV、24 個月預設租期與按租約推算招租次數。原 B 五年升 20% 換算為每年約 3.71%。價格、租金、裝修預算、按揭利率及比較門檻均是情境假設，並非即時市場報價。</p>
+        <p>基於 <strong>Buy-to-Let-Calculator-Linked.xlsx</strong> 的原例與 A／B 輸入改編，模型基準為 <strong>2026-09-16</strong>，租約稅更新為 <strong>2026-09-19</strong>。<strong>2026-09-20 簡化版</strong>加入 3／5／10 年比較、自動估算 RV、24 個月預設租期與按租約推算招租次數；同日<strong>香港規則覆核</strong>加入按揭年期 30 年上限、罰息期、銀行估價、DSR 月入參考及可選個人入息課稅，預設結果不變。原 B 五年升 20% 換算為每年約 3.71%。價格、租金、裝修預算、按揭利率及比較門檻均是情境假設，並非即時市場報價。</p>
         <div class="table-scroll"><table><thead><tr><th>來源</th><th>模型採用口徑</th><th>日期／適用範圍</th></tr></thead><tbody>
           <tr><th><a href="https://www.ird.gov.hk/eng/faq/avd.htm" target="_blank" rel="noopener noreferrer">稅務局：從價印花稅</a></th><td>住宅 Scale 2 稅表；計稅值取樓價及較高評定值</td><td>Excel 採用 2026-02-26 起稅表</td></tr>
           <tr><th><a href="https://www.rvd.gov.hk/tc/faqs/progressive_rating_system.html" target="_blank" rel="noopener noreferrer">差餉物業估價署：累進差餉</a></th><td>住宅累進差餉，未扣一次性寬減</td><td>2025-01-01 起制度</td></tr>
           <tr><th><a href="https://www.rvd.gov.hk/en/our_services/government_rent.html" target="_blank" rel="noopener noreferrer">差餉物業估價署：地租</a></th><td>依適用契約及 RV；基準比例可修改</td><td>須核對個別物業</td></tr>
           <tr><th><a href="https://www.ird.gov.hk/eng/faq/pty.htm" target="_blank" rel="noopener noreferrer">稅務局：物業稅</a></th><td>普通個人物業稅，稅率與法定扣減可修改</td><td>模型基準 2026-09-16</td></tr>
+          <tr><th><a href="https://www.ird.gov.hk/eng/faq/pa.htm" target="_blank" rel="noopener noreferrer">稅務局：個人入息課稅</a></th><td>出租月份按揭利息可扣，上限為該物業 NAV；不利時稅務局按分開評稅</td><td>2026-09-20 核對</td></tr>
+          <tr><th><a href="https://www.info.gov.hk/gia/general/202410/16/P2024101600258p.htm" target="_blank" rel="noopener noreferrer">金管局：按揭成數及供款比率</a></th><td>所有住宅按揭成數上限 70%；非自用 DSR 上限 50%</td><td>2024-10-16 起</td></tr>
+          <tr><th><a href="https://www.info.gov.hk/gia/general/201209/14/P201209140578.htm" target="_blank" rel="noopener noreferrer">金管局：按揭年期上限</a></th><td>新造物業按揭最長 30 年</td><td>2012-09-14 起</td></tr>
           <tr><th><a href="https://www.ird.gov.hk/eng/pdf/irsd119.pdf" target="_blank" rel="noopener noreferrer">稅務局：租約印花稅</a></th><td>普通固定月租、整月租期；稅基向上整百、稅額整元</td><td>Excel 核對日期 2026-09-19</td></tr>
           <tr><th><a href="https://www.ird.gov.hk/eng/faq/sta.htm" target="_blank" rel="noopener noreferrer">稅務局：加蓋印花責任</a></th><td>業主分攤比例只屬約定假設；沒有計逾期罰款</td><td>不含頂手費、不定期或特殊豁免租約</td></tr>
         </tbody></table></div>

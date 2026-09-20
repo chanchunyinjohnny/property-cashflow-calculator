@@ -6,15 +6,15 @@
 const DEFAULTS = {
   purchase_price: 4000000, assessed_value: 0, holding_years: 5,
   monthly_rent: 17000, first_year_vacancy_months: 3, annual_vacancy_months: 1,
-  renovation_cost: 300000, ltv: 0.7, mortgage_rate: 0.03, mortgage_years: 20,
+  renovation_cost: 300000, ltv: 0.7, bank_valuation: 0, mortgage_rate: 0.03, mortgage_years: 20,
   sale_price_growth: 0, sale_price_change: null, benchmark_rate: 0.035,
   buying_commission_rate: 0.01, buying_legal_fees: 15000,
   selling_commission_rate: 0.01, selling_legal_fees: 15000,
   annual_management: 12000, rateable_value: null, government_rent_rate: 0.03,
   annual_insurance: 2500, annual_maintenance: 8000, annual_major_repairs: 10000,
   letting_commission_months: 0.5, reletting_interval_years: null,
-  mortgage_exit_fee: 0, first_year_rates_deduction: 1,
-  property_tax_rate: 0.15, statutory_deduction_rate: 0.2,
+  mortgage_exit_fee: 0, mortgage_exit_fee_years: 3, first_year_rates_deduction: 1,
+  property_tax_rate: 0.15, statutory_deduction_rate: 0.2, pa_marginal_rate: 0,
   lease_months: 24, lease_rent_free_months: 0, lease_copies: 1,
   landlord_duty_share: 0.5, extra_works: Array(10).fill(0),
   lease_counts: null, letting_counts: null,
@@ -29,8 +29,11 @@ const rows = [
   ['annual_vacancy_months','第2年起每年空置／免租','月','常用假設','float',0,12,0.5],
   ['renovation_cost','初始裝修預算','HKD','常用假設','float',0,null,10000],
   ['ltv','按揭成數','%','常用假設','float',0,0.7,0.05],
+  // HK banks apply the LTV to the lower of price and their valuation; 0 means valued at price.
+  ['bank_valuation','銀行估價（0＝同樓價）','HKD','常用假設','float',0,null,100000],
   ['mortgage_rate','按揭固定年利率','%','常用假設','float',0,null,0.001],
-  ['mortgage_years','按揭還款年期','年','常用假設','int',1,null,1],
+  // HKMA has capped the tenor of new property mortgages at 30 years since 2012-09-14.
+  ['mortgage_years','按揭還款年期','年','常用假設','int',1,30,1],
   ['sale_price_growth','每年樓價升跌假設','%','常用假設','float',-1,null,0.01],
   ['sale_price_change','出售時樓價累計升跌（舊版覆寫）','%','常用假設','float',-1,null,0.05],
   ['benchmark_rate','比較用債券年回報門檻','%','常用假設','float',-1,null,0.005],
@@ -38,7 +41,9 @@ const rows = [
   ['buying_legal_fees','買入律師及雜費','HKD','買賣費用','float',0,null,1000],
   ['selling_commission_rate','出售代理佣金','%','買賣費用','float',0,1,0.001],
   ['selling_legal_fees','出售律師及雜費','HKD','買賣費用','float',0,null,1000],
-  ['mortgage_exit_fee','出售時清還費／退回回贈','HKD','買賣費用','float',0,null,1000],
+  ['mortgage_exit_fee','罰息期內出售的清還費／退回回贈','HKD','買賣費用','float',0,null,1000],
+  // Early-repayment charges and cash-rebate clawbacks usually cover only the first 2-3 years.
+  ['mortgage_exit_fee_years','罰息／回贈追討期（0＝沒有）','年','買賣費用','int',0,30,1],
   ['annual_management','每年管理費','HKD','年度費用與稅務','float',0,null,1000],
   ['rateable_value','全年應課差餉租值 RV（留空估算）','HKD','年度費用與稅務','float',0,null,10000],
   ['government_rent_rate','地租佔 RV 比率','%','年度費用與稅務','float',0,null,0.005],
@@ -50,12 +55,23 @@ const rows = [
   ['first_year_rates_deduction','首年差餉可扣稅比例','%','年度費用與稅務','float',0,1,0.05],
   ['property_tax_rate','普通個人物業稅率','%','年度費用與稅務','float',0,1,0.01],
   ['statutory_deduction_rate','法定修葺支出扣減比例','%','年度費用與稅務','float',0,1,0.01],
+  // Personal assessment lets an individual landlord deduct mortgage interest. 0 keeps ordinary
+  // property tax only; otherwise enter the marginal rate (2%-17%, or the 15%/16% standard rate).
+  ['pa_marginal_rate','個人入息課稅邊際稅率（0＝不選）','%','年度費用與稅務','float',0,0.17,0.01],
   ['lease_months','租期（包括租約免租期）','月','租約印花稅','int',1,null,1],
   ['lease_rent_free_months','租約內免租期（只影響印花稅）','月','租約印花稅','float',0,null,0.5],
   ['lease_copies','需加蓋印花的副本數','份','租約印花稅','int',0,null,1],
   ['landlord_duty_share','業主分攤比例','%','租約印花稅','float',0,1,0.05],
 ];
 const specKeys = ['key','label','unit','group','kind','min','max','step'];
+// Range errors that come from a Hong Kong rule explain the rule instead of a generic message.
+const RANGE_MESSAGES = {
+  ltv: '按揭成數最高 70%（金管局 2024-10-16 起所有住宅按揭上限）。',
+  mortgage_years: '按揭還款年期須為 1–30 年（金管局規定新造按揭最長 30 年）。',
+  pa_marginal_rate: '個人入息課稅邊際稅率須在 0%–17% 之間（累進稅率最高 17%）。',
+};
+/** Non-self-use residential mortgages: HKMA debt-servicing-ratio limit since 2024-10-16. */
+export const DSR_LIMIT_NON_SELF_USE = 0.5;
 export const FIELD_SPECS = rows.map(row => Object.fromEntries(row.map((v,i) => [specKeys[i],v])));
 const nullable = new Set(['rateable_value','sale_price_change','reletting_interval_years']);
 const clone = value => structuredClone(value);
@@ -82,7 +98,7 @@ export function validateInputs(data) {
     if (value === null && nullable.has(spec.key)) continue;
     if (!finite(value)) { errors.push(`${spec.label}必須是有限數字。`); continue; }
     if (spec.kind === 'int' && !Number.isSafeInteger(value)) errors.push(`${spec.label}必須是整數。`);
-    if (value < spec.min || (spec.max !== null && value > spec.max)) errors.push(`${spec.label}超出允許範圍。`);
+    if (value < spec.min || (spec.max !== null && value > spec.max)) errors.push(RANGE_MESSAGES[spec.key] ?? `${spec.label}超出允許範圍。`);
   }
   for (const key of ['extra_works','lease_counts','letting_counts']) {
     const values=p[key];
@@ -228,7 +244,9 @@ export function calculate(raw) {
   const p=recommendedDefaults(raw);
   const duty=purchaseStampDuty(p.purchase_price,p.assessed_value),rates=progressiveRates(p.rateable_value);
   const acquisition=p.purchase_price+duty+p.purchase_price*p.buying_commission_rate+p.buying_legal_fees+p.renovation_cost;
-  const loan=p.purchase_price*p.ltv,equity=acquisition-loan;
+  // Banks lend on the lower of price and valuation, so a valuation shortfall raises the cash needed.
+  const lending_value=p.bank_valuation>0?Math.min(p.purchase_price,p.bank_valuation):p.purchase_price;
+  const loan=lending_value*p.ltv,equity=acquisition-loan;
   const payment=monthlyPayment(loan,p.mortgage_rate,p.mortgage_years),lease=leaseStampDuty(p);
   const sale_price=p.purchase_price*(1+p.sale_price_change);
   const annual=[]; let opening=loan;
@@ -242,23 +260,34 @@ export function calculate(raw) {
       p.annual_major_repairs,letting_commission,p.extra_works[year-1],lease_stamp_duty]);
     const operating_before_tax=rental_income-operating_costs;
     const deductible_rates=rates*(year===1?p.first_year_rates_deduction:1);
-    const property_tax=Math.max(0,rental_income-deductible_rates)*(1-p.statutory_deduction_rate)*p.property_tax_rate;
-    const operating_after_tax=operating_before_tax-property_tax;
+    // Net assessable value (NAV) = (rent - owner-paid rates) less the 20% statutory allowance.
+    const net_assessable_value=Math.max(0,rental_income-deductible_rates)*(1-p.statutory_deduction_rate);
+    const property_tax=net_assessable_value*p.property_tax_rate;
     const debt_service=payment*Math.min(12,Math.max(0,p.mortgage_years*12-(year-1)*12));
     const loan_closing=loanBalance(loan,payment,p.mortgage_rate/12,p.mortgage_years*12,year*12);
     const principal=opening-loan_closing;
     const interest=Math.abs(debt_service-principal)<1e-8?0:debt_service-principal;
-    const leveraged_before_tax=operating_before_tax-debt_service,leveraged_after_tax=operating_after_tax-debt_service;
+    // Personal assessment (optional): only interest for let months is deductible, capped at
+    // this property's NAV. IRD compares automatically, so tax never exceeds property tax.
+    const pa_deductible_interest=Math.min(net_assessable_value,Math.max(0,interest)*rent_months/12);
+    const use_pa=p.pa_marginal_rate>0;
+    const cash_tax=use_pa?Math.min(property_tax,net_assessable_value*p.pa_marginal_rate):property_tax;
+    const leveraged_tax=use_pa?Math.min(property_tax,(net_assessable_value-pa_deductible_interest)*p.pa_marginal_rate):property_tax;
+    // The cash track has no loan interest; the mortgage track may deduct it under PA.
+    const operating_after_tax=operating_before_tax-cash_tax;
+    const leveraged_before_tax=operating_before_tax-debt_service,leveraged_after_tax=operating_before_tax-leveraged_tax-debt_service;
     const exit=year===p.holding_years,active=year<=p.holding_years;
     const price=exit?sale_price:0;
     const selling_costs=exit?price*p.selling_commission_rate+p.selling_legal_fees:0;
     const cash_sale_proceeds=price-selling_costs;
-    const loan_exit_fee=exit&&loan_closing>0.01?p.mortgage_exit_fee:0;
+    // Charged only when a loan is still outstanding and the sale falls inside the lock-in period.
+    const loan_exit_fee=exit&&loan_closing>0.01&&year<=p.mortgage_exit_fee_years?p.mortgage_exit_fee:0;
     const leveraged_sale_proceeds=exit?cash_sale_proceeds-loan_closing-loan_exit_fee:0;
     annual.push({year,rent_months,rental_income,management_fee:p.annual_management,rates,government_rent,
       insurance:p.annual_insurance,maintenance:p.annual_maintenance,major_repairs:p.annual_major_repairs,
       letting_commission,extra_works:p.extra_works[year-1],lease_stamp_duty,operating_costs,
-      operating_before_tax,deductible_rates,property_tax,operating_after_tax,loan_opening:opening,
+      operating_before_tax,deductible_rates,net_assessable_value,property_tax,pa_deductible_interest,
+      cash_tax,leveraged_tax,operating_after_tax,loan_opening:opening,
       debt_service,interest,principal,loan_closing,leveraged_before_tax,leveraged_after_tax,
       sale_price:price,selling_costs,cash_sale_proceeds,loan_exit_fee,leveraged_sale_proceeds,
       cash_before_tax_flow:active?operating_before_tax+cash_sale_proceeds:0,
@@ -272,7 +301,9 @@ export function calculate(raw) {
   const required_sale_price_cash=(acquisition*compound-future('operating_before_tax')+p.selling_legal_fees)/(1-p.selling_commission_rate);
   const required_sale_price_leveraged=(equity*compound-future('leveraged_before_tax')+exit.loan_closing+p.selling_legal_fees+exit.loan_exit_fee)/(1-p.selling_commission_rate);
   const result={inputs:p,purchase_duty_base:Math.max(p.purchase_price,p.assessed_value),purchase_stamp_duty:duty,
-    annual_rates:rates,acquisition_cost:acquisition,loan_amount:loan,initial_equity:equity,monthly_payment:payment,sale_price,lease_duty:lease,annual,
+    annual_rates:rates,acquisition_cost:acquisition,lending_value,loan_amount:loan,initial_equity:equity,monthly_payment:payment,
+    // Lowest monthly income a bank would need at the 50% DSR, before any other debts.
+    min_monthly_income_dsr:payment/DSR_LIMIT_NON_SELF_USE,sale_price,lease_duty:lease,annual,
     cash_before_tax:returns(acquisition,annual,'cash_before_tax_flow',p),cash_after_tax:returns(acquisition,annual,'cash_after_tax_flow',p),
     leveraged_before_tax:returns(equity,annual,'leveraged_before_tax_flow',p),leveraged_after_tax:returns(equity,annual,'leveraged_after_tax_flow',p),
     required_sale_price_cash,required_sale_price_leveraged,required_price_change_leveraged:required_sale_price_leveraged/p.purchase_price-1,
