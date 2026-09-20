@@ -14,7 +14,7 @@ const close=(actual,expected,tolerance=0.00002)=>assert.ok(
 );
 const at=(object,path)=>path.split('.').reduce((value,key)=>value[key],object);
 
-for(const fixture of workbook.scenarios) test(`570 cached Excel outputs: ${fixture.name} scenario`,()=>{
+for(const fixture of workbook.scenarios) test(`190 cached Excel outputs: ${fixture.name} scenario`,()=>{
   const result=calculate(inputsFromDict(fixture.inputs));
   for(const [key,value] of Object.entries(fixture.summary)) close(at(result,key),value,key.endsWith('.irr')?1e-8:0.00002);
   fixture.annual.forEach((row,index)=>{
@@ -23,13 +23,46 @@ for(const fixture of workbook.scenarios) test(`570 cached Excel outputs: ${fixtu
 });
 
 test('new automatic defaults match independently calculated 3/5/10-year returns',()=>{
-  const expected=[-0.07504203808294752,-0.03231372759220879,0.0006725124227661169];
+  const expected=[-0.0685173276504314,-0.026166766518164408,0.00588508410658809];
   const results=yearlyExits(presetA());
   assert.deepEqual(results.map(r=>r.inputs.holding_years),[3,5,10]);
   results.forEach((r,i)=>close(r.leveraged_after_tax.irr,expected[i],1e-12));
-  close(results[0].annual[0].operating_costs,57832.5);
+  close(results[0].annual[0].operating_costs,47832.5);
   close(results[0].annual[0].property_tax,17136);
   assert.equal(results[0].inputs.rateable_value,204000);
+});
+
+test('major repairs stay explicit expenses and historical assumptions survive new defaults',()=>{
+  assert.equal(presetA().annual_major_repairs,0);
+  assert.equal(presetOriginal().annual_major_repairs,10000);
+  // Existing saved/exported inputs keep their old budget; an explicit zero still overrides it.
+  const saved=inputsFromDict(JSON.parse(JSON.stringify({...presetA(),annual_major_repairs:10000})));
+  assert.equal(saved.annual_major_repairs,10000);
+  assert.equal(mergeOverrides(saved,{annual_major_repairs:0}).annual_major_repairs,0);
+  const base=calculate(presetA()),budget=calculate(saved);
+  for(let i=0;i<10;i++){
+    close(budget.annual[i].operating_costs-base.annual[i].operating_costs,10000);
+    close(budget.annual[i].property_tax,base.annual[i].property_tax);
+    close(budget.annual[i].loan_closing,base.annual[i].loan_closing);
+  }
+  for(const key of ['cash_before_tax','cash_after_tax','leveraged_before_tax','leveraged_after_tax']){
+    close(budget[key].total_profit-base[key].total_profit,-50000);
+  }
+  close(budget.leveraged_sale_proceeds,base.leveraged_sale_proceeds);
+  close(budget.leveraged_after_tax.irr,-0.03231372759220879,1e-12);
+});
+
+test('dated major works affect only exits after payment and are charged once',()=>{
+  const scheduled={...presetA(),extra_works:[0,0,0,0,50000,0,0,0,0,0]};
+  for(const years of [3,5,10]){
+    const base=calculate({...presetA(),holding_years:years});
+    const project=calculate({...scheduled,holding_years:years});
+    close(project.leveraged_after_tax.total_profit-base.leveraged_after_tax.total_profit,years<5?0:-50000);
+    close(project.annual[4].operating_costs-base.annual[4].operating_costs,50000);
+    assert.ok(project.annual.every(row=>row.major_repairs===0));
+    close(project.leveraged_sale_proceeds,base.leveraged_sale_proceeds);
+    if(years===3)close(project.leveraged_after_tax.irr,base.leveraged_after_tax.irr);
+  }
 });
 
 test('all cashflow and amortization identities hold without double-counting principal',()=>{

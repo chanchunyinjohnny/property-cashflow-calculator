@@ -42,6 +42,10 @@
           <label for="quick-growth">樓價每年升跌 %<input id="quick-growth" type="number" inputmode="decimal" min="-100" step="any" data-quick="sale_price_growth" data-percent="true"></label>
         </div><p>售價預設與買價相同。各持有期按相同的年升跌率複利推算，並非樓價預測。</p></details>
         <p id="derived-summary" class="derived-summary"></p>
+        <p id="repairs-summary" class="section-note" aria-live="polite"></p>
+        <details class="quick-options"><summary>大修與更新支出 <span>按工程計劃填入</span></summary><div class="quick-finance">
+          <label for="quick-major-repairs">每年大修支出 HKD<input id="quick-major-repairs" type="number" inputmode="decimal" min="0" step="any" data-quick="annual_major_repairs" aria-describedby="repairs-help"></label>
+        </div><p id="repairs-help">0 表示尚未估算，不代表沒有大修風險。已知工程請在「假設輸入 → 各年大修／額外工程」按付款年份填，並扣除已計入管理費或其他維修預算的同一筆支出。自己的未花備用金不填作費用；實際繳交的法團基金供款則要計入一次。</p></details>
         <details id="included-costs" class="quick-options included-costs"></details>
         <div id="quick-errors" class="notice error" role="alert" hidden></div>
         <div id="quick-metrics" class="quick-metrics"></div>
@@ -115,7 +119,7 @@
 
       <section id="panel-sensitivity" role="tabpanel" aria-labelledby="tab-sensitivity" hidden>
         <div class="section-heading"><h2>哪個假設最影響回報</h2><div class="inline-controls"><label for="sensitivity-scenario">方案</label><select id="sensitivity-scenario"><option value="a">A</option><option value="b">B</option><option value="original">原例</option></select></div></div>
-        <div class="sensitivity-controls"><label for="sensitivity-variable">調整項目<select id="sensitivity-variable"><option value="sale_price_growth">樓價每年升跌</option><option value="monthly_rent">每月租金</option><option value="mortgage_rate">按揭固定年利率</option></select></label><p>每次只改一項，其他假設保持該方案的已套用值。<br>假設租金改變時，租約稅及招租佣金亦按模型重算。</p></div>
+        <div class="sensitivity-controls"><label for="sensitivity-variable">調整項目<select id="sensitivity-variable"><option value="sale_price_growth">樓價每年升跌</option><option value="monthly_rent">每月租金</option><option value="mortgage_rate">按揭固定年利率</option><option value="annual_major_repairs">每年大修支出</option></select></label><p>每次只改一項，其他假設保持該方案的已套用值。<br>大修金額只是壓力測試假設，並非市場平均或工程報價；逐年工程仍照計。</p></div>
         <div id="sensitivity-table" class="table-scroll"></div>
       </section>
 
@@ -127,10 +131,11 @@
           <article><h3>按揭與本金</h3><p>假設固定利率、按月攤還，沒有再融資。貸款額＝樓價與銀行估價較低者 × 按揭成數（上限 70%），年期最長 30 年。還本金會佔用現金，並透過較低的退出貸款餘額反映一次；不會把已還本金再加作額外回報。清還費／回贈追討只在罰息期內出售才扣（預設 3 年）。DSR 50% 月入只作參考，未計其他債務及銀行如何計租金；出租批核及估價須向銀行確認。</p></article>
           <article><h3>IRR 與 NPV</h3><p>只在現金流恰好轉號一次、且可求解時顯示 IRR。多次轉號可能有多個答案，應改看 NPV。NPV 以各方案的比較門檻折現；正值代表高於該門檻，負值代表低於。</p></article>
           <article><h3>物業稅與費用</h3><p>普通物業稅＝max(0, 實收租金−可扣差餉) × (1−法定扣減比例) × 稅率，不扣管理費、按揭利息或租約稅。選填個人入息課稅邊際稅率後，按揭口徑稅款＝max(0, NAV − 出租月份利息) × 邊際稅率，利息扣減以該物業 NAV 為上限，再與普通物業稅取較低者。這是單一邊際稅率近似，並非完整個人稅單；未包含公司持有或出售盈利稅。首年差餉可扣比例可改。</p></article>
-          <article><h3>租約與維修</h3><p>租約免租期只調整印花稅；實收租金由空置月數控制，避免重複扣租。更改租期後，請自行核對每年簽約份數。大修預留當作會花掉，未用餘額不自動退回；額外工程只填超出預留的支出。</p></article>
+          <article><h3>租約與維修</h3><p>租約免租期只調整印花稅；實收租金由空置月數控制，避免重複扣租。日常維修預算與大修分開。大修預設 0 表示尚未估算；已知工程按付款年份填「各年大修／額外工程」，年度大修欄只填每年預計實付的額外支出。自己的未花備用金不扣回報；實付法團基金供款計入一次，已由該基金支付的工程不再重扣。</p></article>
         </div>
         <div class="section-heading"><h2>使用時要注意</h2><span class="unit-label">模型未計或已簡化</span></div>
         <ol class="caveat-list">
+          <li><strong>大修尚未有統一估算。</strong>日常維修預設每年 $8,000，屬可改預算。初始裝修不涵蓋大廈公用部分工程。大修須按樓況、勘察、法團基金及分攤付款計劃另估；可在敏感度分頁比較年度大修支出。</li>
           <li><strong>租金及年度成本全期固定</strong>，不會自動加租。長年期結果對租金很敏感：預設單位如租金每年升或跌 2%，10 年按揭稅後 IRR 約相差 0.7–0.8 個百分點。</li>
           <li><strong>按息全期固定。</strong>香港常見的是 H 按；銀行定息例子只固定首 3 或 5 年，之後浮動。請填預期平均利率，並在敏感度分頁看 ±1%／±2%。</li>
           <li><strong>自動 RV＝月租 × 12。</strong>差餉租值假設租客自付差餉，若租金已包差餉，實際 RV 可能較低；應以差餉單上的 RV 覆寫。</li>
@@ -142,7 +147,7 @@
           <li><strong>出售利潤當作資本增值，未計利得稅。</strong>如稅務局按客觀證據認定買入時意圖轉售圖利（炒賣），利潤要交利得稅（個人首 200 萬 7.5%，其餘 15%），稅後 IRR 會高估。見<a href="https://www.ird.gov.hk/eng/faq/pty_tran.htm" target="_blank" rel="noopener noreferrer">稅務局物業交易 FAQ</a>。</li>
         </ol>
         <div class="section-heading"><h2>模型來源</h2></div>
-        <p>基於 <strong>Buy-to-Let-Calculator-Linked.xlsx</strong> 的原例與 A／B 輸入改編，模型基準為 <strong>2026-09-16</strong>，租約稅更新為 <strong>2026-09-19</strong>。<strong>2026-09-20 簡化版</strong>加入 3／5／10 年比較、自動估算 RV、24 個月預設租期與按租約推算招租次數；同日<strong>香港規則覆核</strong>加入按揭年期 30 年上限、罰息期、銀行估價、DSR 月入參考及可選個人入息課稅，預設結果不變。原 B 五年升 20% 換算為每年約 3.71%。價格、租金、裝修預算、按揭利率及比較門檻均是情境假設，並非即時市場報價。</p>
+        <p>基於 <strong>Buy-to-Let-Calculator-Linked.xlsx</strong> 的原例與 A／B 輸入改編，模型基準為 <strong>2026-09-16</strong>，租約稅更新為 <strong>2026-09-19</strong>。<strong>2026-09-20 簡化版</strong>加入 3／5／10 年比較、自動估算 RV、24 個月預設租期與按租約推算招租次數；同日<strong>香港規則覆核</strong>加入按揭年期 30 年上限、罰息期、銀行估價、DSR 月入參考及可選個人入息課稅。其後大修覆核移除每年必扣 $10,000 的新方案預設，改為尚未估算，須按物業填入。已保存方案與 Excel 原例保留原預算。原 B 五年升 20% 換算為每年約 3.71%。價格、租金、裝修預算、按揭利率及比較門檻均是情境假設，並非即時市場報價。</p>
         <div class="table-scroll"><table><thead><tr><th>來源</th><th>模型採用口徑</th><th>日期／適用範圍</th></tr></thead><tbody>
           <tr><th><a href="https://www.ird.gov.hk/eng/faq/avd.htm" target="_blank" rel="noopener noreferrer">稅務局：從價印花稅</a></th><td>住宅 Scale 2 稅表；計稅值取樓價及較高評定值</td><td>Excel 採用 2026-02-26 起稅表</td></tr>
           <tr><th><a href="https://www.rvd.gov.hk/tc/faqs/progressive_rating_system.html" target="_blank" rel="noopener noreferrer">差餉物業估價署：累進差餉</a></th><td>住宅累進差餉，未扣一次性寬減</td><td>2025-01-01 起制度</td></tr>
@@ -153,6 +158,7 @@
           <tr><th><a href="https://www.info.gov.hk/gia/general/201209/14/P201209140578.htm" target="_blank" rel="noopener noreferrer">金管局：按揭年期上限</a></th><td>新造物業按揭最長 30 年</td><td>2012-09-14 起</td></tr>
           <tr><th><a href="https://www.ird.gov.hk/eng/pdf/irsd119.pdf" target="_blank" rel="noopener noreferrer">稅務局：租約印花稅</a></th><td>普通固定月租、整月租期；稅基向上整百、稅額整元</td><td>Excel 核對日期 2026-09-19</td></tr>
           <tr><th><a href="https://www.ird.gov.hk/eng/faq/sta.htm" target="_blank" rel="noopener noreferrer">稅務局：加蓋印花責任</a></th><td>業主分攤比例只屬約定假設；沒有計逾期罰款</td><td>不含頂手費、不定期或特殊豁免租約</td></tr>
+          <tr><th><a href="https://www.ura.org.hk/tc/news-centre/press-releases/20240329" target="_blank" rel="noopener noreferrer">市建局：預防性維修及特別基金</a></th><td>按個別樓宇十年工程估算及供款計劃安排，大修不設統一年度預設</td><td>2024-03-29 公布；2026-09-20 核對</td></tr>
         </tbody></table></div>
         <div class="footnote-box"><strong>輸入只在此瀏覽器保存。</strong> 計算在你的裝置執行，方案不會提交到伺服器。可下載 JSON 備份，再匯入另一個瀏覽器。清除瀏覽器資料後，本機保存的方案會消失。</div>
       </section>

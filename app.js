@@ -179,6 +179,10 @@ function renderQuick() {
   const horizons = yearlyExits(state.base);
   const r = horizons.find((r) => r.inputs.holding_years === 5) || horizons[1];
   const pa = usesPa(state.base);
+  const datedWorks = state.base.extra_works.reduce((total, value) => total + value, 0);
+  $('repairs-summary').textContent = state.base.annual_major_repairs === 0 && datedWorks === 0
+    ? `大修尚未估算，回報未扣大修；日常維修已計每年 ${money(state.base.annual_maintenance)}。請按工程計劃補入，或在敏感度比較大修支出。`
+    : `大修採用：每年 ${money(state.base.annual_major_repairs)}，另有逐年工程合計 ${money(datedWorks)}（10 年輸入）；各持有期只扣退出前的付款。`;
   // Only mention the valuation when it actually cuts the loan (below the price).
   const valuation = state.base.bank_valuation > 0 && state.base.bank_valuation < state.base.purchase_price ? ` · 估價 ${wan(state.base.bank_valuation)} 萬` : '';
   $('quick-assumptions-summary').textContent = `按揭 ${pct(state.base.ltv)}${valuation} · 固定 ${pct(state.base.mortgage_rate)} · ${state.base.mortgage_years} 年 · 樓價每年 ${pct(state.base.sale_price_growth)}`;
@@ -203,7 +207,7 @@ function renderQuick() {
   $('horizons-table').innerHTML = `<table class="horizon-table"><thead><tr><th>金額：HKD 萬</th>${horizons.map((v) => `<th>${v.inputs.holding_years} 年</th>`).join('')}</tr></thead><tbody>${rows.map(([label,get,format,cls='']) => `<tr class="${cls}"><th>${label}</th>${horizons.map((v) => `<td class="${color(get(v))}">${format(get(v))}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
   const missing = horizons.filter((v) => v.leveraged_after_tax.irr === null).map((v) => `${v.inputs.holding_years} 年`);
   $('quick-irr-note').textContent = missing.length ? `${missing.join('、')}的現金流無唯一可顯示 IRR；可於詳細比較查看 NPV。` : '年化回報採年末現金流近似；並非按實際日期計算。累計自有資金投入未扣回中途分派的盈餘。';
-  $('included-costs').innerHTML = `<summary>已計入哪些成本 <span>費率、金額均可在詳細假設修改</span></summary><p>管理費 ${money(state.base.annual_management / 12)}／月、保險 ${money(state.base.annual_insurance)}／年、日常維修 ${money(state.base.annual_maintenance)}／年、預計更新／大修支出 ${money(state.base.annual_major_repairs)}／年（當年花掉）。另計買入 AVD ${money(r.purchase_stamp_duty)}、差餉 ${money(r.annual_rates)}／年、地租、${pa ? '物業稅或個人入息課稅（較低者）' : '物業稅'}、租約印花稅、招租佣金、買賣代理及律師雜費。額外工程只填超出上述維修的支出；預算並非已取得的報價。</p>`;
+  $('included-costs').innerHTML = `<summary>已計入哪些成本 <span>費率、金額均可在詳細假設修改</span></summary><p>管理費 ${money(state.base.annual_management / 12)}／月、保險 ${money(state.base.annual_insurance)}／年、日常維修 ${money(state.base.annual_maintenance)}／年、年度大修支出 ${money(state.base.annual_major_repairs)}／年（實付假設）。另計買入 AVD ${money(r.purchase_stamp_duty)}、差餉 ${money(r.annual_rates)}／年、地租、${pa ? '物業稅或個人入息課稅（較低者）' : '物業稅'}、租約印花稅、招租佣金、買賣代理及律師雜費。逐年工程只填未計入管理費、初始裝修及上述維修的付款；預算並非已取得的報價。</p>`;
 }
 
 const returnRows = [
@@ -260,7 +264,7 @@ function renderChart() {
 
 const ANNUAL_ROWS=[
   ['收租與營運',null],['合約月租','monthly_rent'],['實收租金月數','rent_months','number'],['實收租金','rental_income'],
-  ['成本明細（支出以正數顯示）',null],['管理費','management_fee'],['差餉','rates'],['地租','government_rent'],['保險','insurance'],['日常維修','maintenance'],['預計更新／大修支出（當年花掉）','major_repairs'],['招租佣金','letting_commission'],['額外工程（超出已計成本）','extra_works'],['租約印花稅','lease_stamp_duty'],['營運成本合計','operating_costs','total'],['普通個人物業稅','property_tax'],
+  ['成本明細（支出以正數顯示）',null],['管理費','management_fee'],['差餉','rates'],['地租','government_rent'],['保險','insurance'],['日常維修','maintenance'],['年度大修支出（實付假設）','major_repairs'],['招租佣金','letting_commission'],['大修／額外工程（逐年付款）','extra_works'],['租約印花稅','lease_stamp_duty'],['營運成本合計','operating_costs','total'],['普通個人物業稅','property_tax'],
   ['應評稅淨值 NAV','net_assessable_value'],['個人入息課稅可扣利息（出租月份，≤NAV）','pa_deductible_interest'],['全現金口徑稅款（較低者）','cash_tax'],['按揭口徑稅款（較低者）','leveraged_tax'],
   ['現金與融資',null],['稅前、供款前淨現金','operating_before_tax'],['稅後、供款前淨現金（全現金口徑）','operating_after_tax'],['期初貸款','loan_opening'],['全年供款','debt_service'],['其中利息','interest'],['其中還本金','principal'],['期末貸款','loan_closing'],['按揭供款後現金（稅前）','leveraged_before_tax','total'],['按揭供款後現金（稅後）','leveraged_after_tax','total'],
   ['年末出售',null],['出售價','sale_price'],['售樓成本（不含還貸）','selling_costs'],['清還費／退回回贈','loan_exit_fee'],['售樓淨回款（全現金）','cash_sale_proceeds'],['售樓淨回款（按揭）','leveraged_sale_proceeds'],
@@ -282,9 +286,12 @@ function renderAnnual() {
 
 function renderSensitivity() {
   const base=clone(inputsFor($('sensitivity-scenario').value)),key=$('sensitivity-variable').value;
-  let values=key==='sale_price_growth'?[-.05,-.03,-.01,0,.01,.03,.05]:key==='monthly_rent'?[.8,.9,1,1.1,1.2].map((m)=>Math.round(base.monthly_rent*m)):[-0.02,-0.01,0,.01,.02].map((d)=>Math.max(0,base.mortgage_rate+d));
+  // Repair amounts are illustrative stress inputs, not estimates of market costs.
+  const monetary=key==='monthly_rent'||key==='annual_major_repairs';
+  const heading=key==='annual_major_repairs'?'每年大修支出':key==='monthly_rent'?'每月租金':'年率';
+  let values=key==='annual_major_repairs'?[0,5000,10000,20000]:key==='sale_price_growth'?[-.05,-.03,-.01,0,.01,.03,.05]:key==='monthly_rent'?[.8,.9,1,1.1,1.2].map((m)=>Math.round(base.monthly_rent*m)):[-0.02,-0.01,0,.01,.02].map((d)=>Math.max(0,base.mortgage_rate+d));
   values=[...new Set([...values,base[key]])].sort((a,b)=>a-b);
-  $('sensitivity-table').innerHTML=`<table><thead><tr><th>${key==='monthly_rent'?'每月租金':'年率'}</th><th>首年每月補貼</th><th>5 年售價</th><th>按揭稅後 IRR</th><th>全現金稅後 IRR</th><th>按揭稅前 NPV</th></tr></thead><tbody>${values.map((value)=>{const r=horizonResult({...base,[key]:value,sale_price_change:null});const selected=Math.abs(value-base[key])<1e-9;return `<tr class="${selected?'current-row':''}"><th>${key==='monthly_rent'?money(value):pct(value)}${selected?'<span class="current-marker">目前</span>':''}</th><td>${money(r.first_year_monthly_subsidy)}</td><td>${money(r.sale_price)}</td><td>${pct(r.leveraged_after_tax.irr)}</td><td>${pct(r.cash_after_tax.irr)}</td><td class="${color(r.leveraged_before_tax.npv)}">${money(r.leveraged_before_tax.npv)}</td></tr>`;}).join('')}</tbody></table>`;
+  $('sensitivity-table').innerHTML=`<table><thead><tr><th>${heading}</th><th>首年每月補貼</th><th>5 年售價</th><th>按揭稅後 IRR</th><th>全現金稅後 IRR</th><th>按揭稅前 NPV</th></tr></thead><tbody>${values.map((value)=>{const r=horizonResult({...base,[key]:value,sale_price_change:null});const selected=Math.abs(value-base[key])<1e-9;return `<tr class="${selected?'current-row':''}"><th>${monetary?money(value):pct(value)}${selected?'<span class="current-marker">目前</span>':''}</th><td>${money(r.first_year_monthly_subsidy)}</td><td>${money(r.sale_price)}</td><td>${pct(r.leveraged_after_tax.irr)}</td><td>${pct(r.cash_after_tax.irr)}</td><td class="${color(r.leveraged_before_tax.npv)}">${money(r.leveraged_before_tax.npv)}</td></tr>`;}).join('')}</tbody></table>`;
 }
 
 function fieldPercent(spec){ return spec.unit==='%' || spec.unit==='％'; }
@@ -297,7 +304,7 @@ function inputRow(spec,index=null){
   const override=index===null?state.overrides[key]:state.overrides[key]?.[index];
   const bValue=index===null?results.b.inputs[key]:results.b.inputs[key]?.[index];
   const attributes=`data-field="${key}"${index===null?'':` data-index="${index}"`}${fieldPercent(spec)?' data-percent="true"':''}`;
-  const label=key==='annual_major_repairs'?'預計更新／大修支出（當年花掉）':spec.label;
+  const label=spec.label;
   return `<tr><th><label for="a-${id}">${escapeHtml(label)}</label><span class="field-unit">${escapeHtml(spec.unit)}</span>${auto?'<span class="help">自動推算；取消上方自動選項可自行設定</span>':''}</th><td><input id="a-${id}" type="number" inputmode="decimal" step="any" ${attributes} data-side="a" aria-label="${escapeHtml(label)}，方案 A" value="${displayInput(baseValue,spec)}" ${auto?'disabled':''}></td><td><input id="b-${id}" class="${override!==null&&override!==undefined?'override-filled':''}" type="number" inputmode="decimal" step="any" ${attributes} data-side="b" aria-label="${escapeHtml(label)}，B 差異；留白繼承 A" placeholder="跟 A" value="${displayInput(override,spec)}"></td><td><output id="effective-${id}" class="${override===null||override===undefined?'inherited':''}">${displayInput(bValue,spec)}</output></td></tr>`;
 }
 function renderInputs(){
@@ -306,7 +313,7 @@ function renderInputs(){
   if(!results.a) results={a:horizonResult(state.base),b:horizonResult(resolveB()),original:horizonResult(presetOriginal())};
   const groups=[...new Set(scalarSpecs.map((s)=>s.group))];
   const header='<thead><tr><th>輸入項目</th><th>A／共同假設</th><th>B 不同才填</th><th>B 採用值</th></tr></thead>';
-  $('input-groups').innerHTML=groups.map((group,i)=>`<details class="input-group" data-group="${escapeHtml(group)}" ${open.has(group)||i===0?'open':''}><summary>${escapeHtml(group)}<span class="group-note">${scalarSpecs.filter((s)=>s.group===group).length} 項</span></summary><div class="table-scroll"><table class="input-table">${header}<tbody>${scalarSpecs.filter((s)=>s.group===group).map((s)=>inputRow(s)).join('')}</tbody></table></div></details>`).join('')+[['extra_works','各年額外工程','HKD'],['lease_counts','各年簽約份數','份'],['letting_counts','各年招租佣金次數','次']].map(([key,label,unit])=>`<details class="input-group" data-group="${key}" ${open.has(key)?'open':''}><summary>${label}<span class="group-note">10 年 · 只計選定持有期</span></summary><div class="table-scroll"><table class="input-table">${header}<tbody>${Array.from({length:10},(_,i)=>inputRow({key,label:`第 ${i+1} 年${label.slice(2)}`,unit},i)).join('')}</tbody></table></div></details>`).join('');
+  $('input-groups').innerHTML=groups.map((group,i)=>`<details class="input-group" data-group="${escapeHtml(group)}" ${open.has(group)||i===0?'open':''}><summary>${escapeHtml(group)}<span class="group-note">${scalarSpecs.filter((s)=>s.group===group).length} 項</span></summary><div class="table-scroll"><table class="input-table">${header}<tbody>${scalarSpecs.filter((s)=>s.group===group).map((s)=>inputRow(s)).join('')}</tbody></table></div></details>`).join('')+[['extra_works','各年大修／額外工程','HKD'],['lease_counts','各年簽約份數','份'],['letting_counts','各年招租佣金次數','次']].map(([key,label,unit])=>`<details class="input-group" data-group="${key}" ${open.has(key)?'open':''}><summary>${label}<span class="group-note">10 年 · 只計選定持有期</span></summary><div class="table-scroll"><table class="input-table">${header}<tbody>${Array.from({length:10},(_,i)=>inputRow({key,label:`第 ${i+1} 年${label.slice(2)}`,unit},i)).join('')}</tbody></table></div></details>`).join('');
   $('input-errors').hidden=true;setDirty(false);
 }
 function setDirty(value){dirty=value;$('dirty-dot').hidden=!value;$('draft-status').textContent=value?'尚有未套用修改；結果仍使用先前數值':'所有輸入已套用';}

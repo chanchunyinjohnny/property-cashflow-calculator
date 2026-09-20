@@ -11,7 +11,9 @@ const DEFAULTS = {
   buying_commission_rate: 0.01, buying_legal_fees: 15000,
   selling_commission_rate: 0.01, selling_legal_fees: 15000,
   annual_management: 12000, rateable_value: null, government_rent_rate: 0.03,
-  annual_insurance: 2500, annual_maintenance: 8000, annual_major_repairs: 10000,
+  // Major works need a property-specific budget. Zero means not yet estimated;
+  // actual annual payments or dated projects can still be entered separately.
+  annual_insurance: 2500, annual_maintenance: 8000, annual_major_repairs: 0,
   letting_commission_months: 0.5, reletting_interval_years: null,
   mortgage_exit_fee: 0, mortgage_exit_fee_years: 3, first_year_rates_deduction: 1,
   property_tax_rate: 0.15, statutory_deduction_rate: 0.2, pa_marginal_rate: 0,
@@ -49,7 +51,7 @@ const rows = [
   ['government_rent_rate','地租佔 RV 比率','%','年度費用與稅務','float',0,null,0.005],
   ['annual_insurance','每年保險','HKD','年度費用與稅務','float',0,null,500],
   ['annual_maintenance','每年日常維修','HKD','年度費用與稅務','float',0,null,1000],
-  ['annual_major_repairs','預計更新／大修支出（當年花掉）','HKD','年度費用與稅務','float',0,null,1000],
+  ['annual_major_repairs','每年大修支出（可選）','HKD','年度費用與稅務','float',0,null,1000],
   ['letting_commission_months','每次招租佣金','月租','年度費用與稅務','float',0,null,0.25],
   ['reletting_interval_years','招租佣金間隔（留空跟租約）','年','年度費用與稅務','int',1,null,1],
   ['first_year_rates_deduction','首年差餉可扣稅比例','%','年度費用與稅務','float',0,1,0.05],
@@ -81,8 +83,10 @@ const sum = values => values.reduce((a,b) => a+b,0);
 export function presetA() { return clone(DEFAULTS); }
 export function presetB() { return {...presetA(),sale_price_growth: Math.pow(1.2,1/5)-1}; }
 export function presetOriginal() {
+  // Keep the historical example's explicit expense assumption when defaults change.
   return {...presetA(),monthly_rent:15000,first_year_vacancy_months:2,
     renovation_cost:150000,mortgage_rate:0.0293,mortgage_years:30,
+    annual_major_repairs:10000,
     benchmark_rate:0.04,rateable_value:180000,reletting_interval_years:2,
     sale_price_change:0,lease_counts:[1,0,1,0,1,0,1,0,1,0]};
 }
