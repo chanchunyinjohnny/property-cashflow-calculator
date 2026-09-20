@@ -138,11 +138,16 @@ function applyState(next, message) {
   if (message) notify(message);
 }
 
+function quickDisplayValue(input, value) {
+  if (value === null) return '';
+  // Agents quote management fees monthly; saved scenarios and the model keep annual costs.
+  const displayed = input.dataset.quick === 'annual_management' ? value / 12 : value * (input.dataset.percent ? 100 : 1);
+  return String(Number(displayed.toFixed(8)));
+}
+
 function refreshQuickInputs() {
   document.querySelectorAll('[data-quick]').forEach((input) => {
-    const key = input.dataset.quick;
-    const value = state.base[key];
-    input.value = value === null ? '' : String(Number((value * (input.dataset.percent ? 100 : 1)).toFixed(8)));
+    input.value = quickDisplayValue(input, state.base[input.dataset.quick]);
   });
   $('auto-rv').checked = state.base.rateable_value === null;
   $('auto-leases').checked = state.base.lease_counts === null;
@@ -154,7 +159,12 @@ function quickChange() {
     if (!input.value.trim()) { $('quick-errors').textContent = '請完成上方數值；下方結果仍為上一次有效輸入。'; $('quick-errors').hidden = false; return; }
     const value = Number(input.value);
     if (!Number.isFinite(value)) return;
-    next.base[input.dataset.quick] = value / (input.dataset.percent ? 100 : 1);
+    const key = input.dataset.quick;
+    // Preserve an imported annual amount exactly when another quick field changes.
+    // Its monthly display may be rounded (for example 10,000 / 12).
+    if (key === 'annual_management' && value === Number(quickDisplayValue(input, state.base[key]))) continue;
+    // Management fees are payable for all 12 months, including vacant months.
+    next.base[key] = key === 'annual_management' ? value * 12 : value / (input.dataset.percent ? 100 : 1);
   }
   // Annual growth is authoritative in the mobile workflow, including legacy imports.
   next.base.sale_price_change = null;
