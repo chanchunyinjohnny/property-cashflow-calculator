@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="description" content="香港收租樓情境計算器：比較 A／B 現金流、按揭與全現金 IRR、淨現值及所需售價。">
+  <title>收租樓現金流 · 投資試算</title>
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">跳到主要內容</a>
+  <div class="app-shell">
+    <header class="masthead">
+      <a class="wordmark" href="./" aria-label="收租樓現金流首頁">PROPERTY <span>/</span> CASHFLOW</a>
+      <span class="masthead-note">免費工具 <span aria-hidden="true">·</span> HKD</span>
+    </header>
+    <main id="main-content">
+      <div class="page-heading">
+        <div>
+          <p class="eyebrow">BUY-TO-LET ANALYSIS</p>
+          <h1>收租樓現金流</h1>
+          <p class="subtitle">睇樓時填三個數，即時計算收租現金流與回報。</p>
+        </div>
+        <div class="model-stamp"><span class="status-dot" aria-hidden="true"></span>情境模型<span>模型基準 2026-09-16<br>租約稅更新 2026-09-19</span></div>
+      </div>
+
+      <div id="notification" class="notice" role="status" aria-live="polite" hidden></div>
+      <div id="fatal-error" class="notice error" role="alert" hidden></div>
+      <section class="quick-calculator" aria-labelledby="quick-heading">
+        <div class="section-heading"><h2 id="quick-heading">這個單位，值得再研究嗎？</h2><span class="unit-label">填入金額，即時更新</span></div>
+        <div class="quick-inputs">
+          <label for="quick-price">買入樓價<span class="input-with-unit"><input id="quick-price" type="number" inputmode="decimal" min="1" step="any" data-quick="purchase_price"><span>HKD</span></span></label>
+          <label for="quick-rent">預計每月租金<span class="input-with-unit"><input id="quick-rent" type="number" inputmode="decimal" min="0" step="any" data-quick="monthly_rent"><span>HKD／月</span></span></label>
+          <label for="quick-renovation">裝修預算<span class="input-with-unit"><input id="quick-renovation" type="number" inputmode="decimal" min="0" step="any" data-quick="renovation_cost"><span>HKD</span></span></label>
+        </div>
+        <details class="quick-options"><summary>按揭與售價假設 <span id="quick-assumptions-summary"></span></summary><div class="quick-finance">
+          <label for="quick-ltv">按揭成數 %<input id="quick-ltv" type="number" inputmode="decimal" min="0" max="70" step="any" data-quick="ltv" data-percent="true"></label>
+          <label for="quick-rate">固定按息 %／年<input id="quick-rate" type="number" inputmode="decimal" min="0" step="any" data-quick="mortgage_rate" data-percent="true"></label>
+          <label for="quick-term">還款年期<input id="quick-term" type="number" inputmode="numeric" min="1" step="1" data-quick="mortgage_years"></label>
+          <label for="quick-growth">樓價每年升跌 %<input id="quick-growth" type="number" inputmode="decimal" min="-100" step="any" data-quick="sale_price_growth" data-percent="true"></label>
+        </div><p>售價預設與買價相同。各持有期按相同的年升跌率複利推算，並非樓價預測。</p></details>
+        <p id="derived-summary" class="derived-summary"></p>
+        <details id="included-costs" class="quick-options included-costs"></details>
+        <div id="quick-errors" class="notice error" role="alert" hidden></div>
+        <div id="quick-metrics" class="quick-metrics"></div>
+        <div class="section-heading"><h2>持有多久，結果有何不同</h2><span class="unit-label">方案 A · 物業稅後</span></div>
+        <p class="section-note">同時比較 3、5、10 年。總投入包括初始自有資金及持有期內需要補貼的現金。</p>
+        <div id="horizons-table" class="table-scroll"></div>
+        <p id="quick-irr-note" class="section-note"></p>
+      </section>
+
+      <details class="save-panel"><summary>儲存、載入或下載 <span id="save-status">資料只在這部裝置處理</span></summary>
+        <div class="save-controls"><label for="scenario-name">為這個單位命名<input id="scenario-name" type="text" maxlength="60" placeholder="例如：太古城 400 萬"></label><button type="button" class="primary" id="save-device">儲存到這部裝置</button></div>
+        <div class="save-controls"><label for="saved-scenarios">已保存單位<select id="saved-scenarios"><option value="">尚未保存</option></select></label><button type="button" id="load-device">載入</button><button type="button" id="delete-device">刪除已選單位</button></div>
+        <p class="section-note">不需要帳戶；資料留在此瀏覽器。換裝置或清除瀏覽器資料前，請下載方案 JSON 備份。</p>
+        <div class="toolbar" aria-label="方案備份"><div class="toolbar-group"><button type="button" id="restore-workbook">恢復預設</button><button type="button" id="restore-original">載入原例</button></div><div class="toolbar-group"><button type="button" id="import-button">匯入 JSON</button><input id="import-file" class="visually-hidden" type="file" accept=".json,application/json" aria-label="選擇方案 JSON 檔案"><button type="button" id="export-json">下載 JSON</button><a class="button-link" href="./Buy-to-Let-Calculator.xlsx" download>下載 Excel 計算器</a></div></div>
+        <p class="section-note">Excel 下載為預設假設版本，不包含你在網頁的修改。JSON 會保存目前網頁方案。</p>
+      </details>
+
+      <div class="analysis-heading"><h2>深入看數字</h2><span>以下沿用相同輸入；詳細比較預設看第 5 年</span></div>
+      <nav class="tabs" role="tablist" aria-label="分析工作區">
+        <button id="tab-overview" role="tab" aria-selected="true" aria-controls="panel-overview" data-tab="overview">總覽與比較</button>
+        <button id="tab-inputs" role="tab" aria-selected="false" aria-controls="panel-inputs" data-tab="inputs" tabindex="-1">假設輸入 <span id="dirty-dot" hidden>●</span></button>
+        <button id="tab-annual" role="tab" aria-selected="false" aria-controls="panel-annual" data-tab="annual" tabindex="-1">年度明細</button>
+        <button id="tab-sensitivity" role="tab" aria-selected="false" aria-controls="panel-sensitivity" data-tab="sensitivity" tabindex="-1">敏感度</button>
+        <button id="tab-method" role="tab" aria-selected="false" aria-controls="panel-method" data-tab="method" tabindex="-1">來源與口徑</button>
+      </nav>
+
+      <section id="panel-overview" role="tabpanel" aria-labelledby="tab-overview">
+        <div id="scenario-summaries" class="scenario-summaries"></div>
+        <div class="section-heading"><h2>四個口徑，一起比較</h2><label class="checkbox-label"><input type="checkbox" id="show-original"> 對照 Excel 原例</label></div>
+        <p class="section-note">IRR 包含買入投入、年度淨現金及退出回款。「稅後」僅扣普通個人物業稅。</p>
+        <div id="returns-table" class="table-scroll"></div>
+        <div id="irr-warnings"></div>
+        <div class="dashboard-grid">
+          <section>
+            <div class="section-heading"><h2>每年到手現金</h2><label class="checkbox-label"><input type="checkbox" id="chart-sale"> 包括退出回款</label></div>
+            <p class="section-note">按揭、物業稅後；未包括第 0 年初始投入。負數代表當年需要補貼。</p>
+            <div id="cashflow-chart" class="chart-container"></div>
+          </section>
+          <section>
+            <div class="section-heading"><h2>需要準備多少現金</h2><span class="unit-label">HKD</span></div>
+            <div id="funding-table" class="table-scroll"></div>
+          </section>
+        </div>
+        <div class="section-heading"><h2>賣多少，才達到目標</h2><span class="unit-label">稅前回報門檻</span></div>
+        <p class="section-note">所需售價已納入歷年補貼和出售費用；比較門檻是可改假設，並非債券成交報價。</p>
+        <div id="targets-table" class="table-scroll"></div>
+        <div class="footnote-box">A 是上方單位的共同假設，B 預設樓價每年升約 3.71%（5 年累計 +20%）。兩者均為假設算例，不是估價。網頁另自動估算 RV 及租約份數，均可在詳細假設覆寫。</div>
+      </section>
+
+      <section id="panel-inputs" role="tabpanel" aria-labelledby="tab-inputs" hidden>
+        <div class="section-heading"><h2>共同假設與 B 差異</h2><button type="button" id="clear-overrides">清除全部 B 差異</button></div>
+        <p class="section-note">A 是共同假設。B 留白便跟 A；輸入 <strong>0 代表零</strong>。百分比填 3 即 3%。修改後按「套用並計算」。</p>
+        <div class="auto-options"><label><input id="auto-rv" type="checkbox" checked> 自動估算 RV＝月租 × 12</label><label><input id="auto-leases" type="checkbox" checked> 按租期自動推算簽約年度</label></div>
+        <form id="assumptions-form" novalidate>
+          <div id="input-groups"></div>
+          <div id="input-errors" class="notice error" role="alert" hidden></div>
+          <div class="form-actions"><span id="draft-status">所有輸入已套用</span><div><button type="button" id="discard-draft">取消未套用修改</button><button class="primary" type="submit">套用並計算</button></div></div>
+        </form>
+      </section>
+
+      <section id="panel-annual" role="tabpanel" aria-labelledby="tab-annual" hidden>
+        <div class="section-heading"><h2>由第 0 年到出售</h2><div class="inline-controls"><label for="annual-scenario">方案</label><select id="annual-scenario"><option value="a">A</option><option value="b">B</option><option value="original">原例</option></select><label for="detail-horizon">持有期</label><select id="detail-horizon"><option value="3">3 年</option><option value="5" selected>5 年</option><option value="10">10 年</option></select><button type="button" id="export-csv">下載 CSV</button></div></div>
+        <p class="section-note">正數是收入、負數是支出；「成本明細」區以正數顯示成本。橫向捲動可查看全部年度。</p>
+        <div id="annual-table" class="table-scroll"></div>
+        <div class="section-heading"><h2>持有 3、5、10 年的退出比較</h2><span class="unit-label">同一每年樓價升跌假設</span></div>
+        <p class="section-note">各列按同一每年樓價升跌率複利推算年末售價。</p>
+        <div id="exit-table" class="table-scroll"></div>
+        <div class="section-heading"><h2>印花稅與買入成本</h2><span class="unit-label">HKD</span></div>
+        <div id="fees-table" class="table-scroll"></div>
+      </section>
+
+      <section id="panel-sensitivity" role="tabpanel" aria-labelledby="tab-sensitivity" hidden>
+        <div class="section-heading"><h2>哪個假設最影響回報</h2><div class="inline-controls"><label for="sensitivity-scenario">方案</label><select id="sensitivity-scenario"><option value="a">A</option><option value="b">B</option><option value="original">原例</option></select></div></div>
+        <div class="sensitivity-controls"><label for="sensitivity-variable">調整項目<select id="sensitivity-variable"><option value="sale_price_growth">樓價每年升跌</option><option value="monthly_rent">每月租金</option><option value="mortgage_rate">按揭固定年利率</option></select></label><p>每次只改一項，其他假設保持該方案的已套用值。<br>假設租金改變時，租約稅及招租佣金亦按模型重算。</p></div>
+        <div id="sensitivity-table" class="table-scroll"></div>
+      </section>
+
+      <section id="panel-method" role="tabpanel" aria-labelledby="tab-method" hidden>
+        <div class="section-heading"><h2>你正在計算甚麼</h2><span class="unit-label">來源可追溯 · 假設可修改</span></div>
+        <div class="method-grid">
+          <article><h3>現金流時間</h3><p>買入交收是第 0 年，裝修一次列入初始投入。租金、營運費、供款與物業稅按年度歸集，近似在年末發生；這是年度 IRR，並非按實際日期計算的 XIRR。</p></article>
+          <article><h3>租金與空置</h3><p>首年只扣裝修／招租無租月數；第 2 年起才扣每年空置。管理費、差餉及供樓在空置時照計。租金、年度成本與應課差餉租值全期固定，不自動加租。</p></article>
+          <article><h3>按揭與本金</h3><p>假設固定利率、按月攤還，沒有再融資。還本金會佔用現金，並透過較低的退出貸款餘額反映一次；不會把已還本金再加作額外回報。出租批核、估值及清還費須自行確認。</p></article>
+          <article><h3>IRR 與 NPV</h3><p>只在現金流恰好轉號一次、且可求解時顯示 IRR。多次轉號可能有多個答案，應改看 NPV。NPV 以各方案的比較門檻折現；正值代表高於該門檻，負值代表低於。</p></article>
+          <article><h3>物業稅與費用</h3><p>普通物業稅＝max(0, 實收租金−可扣差餉) × (1−法定扣減比例) × 稅率。沒有逐項扣管理費、按揭利息或租約稅。首年差餉可扣比例可改；未包含個人入息課稅、公司持有或出售盈利稅。</p></article>
+          <article><h3>租約與維修</h3><p>租約免租期只調整印花稅；實收租金由空置月數控制，避免重複扣租。更改租期後，請自行核對每年簽約份數。大修預留當作會花掉，未用餘額不自動退回；額外工程只填超出預留的支出。</p></article>
+        </div>
+        <div class="section-heading"><h2>模型來源</h2></div>
+        <p>基於 <strong>Buy-to-Let-Calculator-Linked.xlsx</strong> 的原例與 A／B 輸入改編，模型基準為 <strong>2026-09-16</strong>，租約稅更新為 <strong>2026-09-19</strong>。<strong>2026-09-20 簡化版</strong>加入 3／5／10 年比較、自動估算 RV、24 個月預設租期與按租約推算招租次數。原 B 五年升 20% 換算為每年約 3.71%。價格、租金、裝修預算、按揭利率及比較門檻均是情境假設，並非即時市場報價。</p>
+        <div class="table-scroll"><table><thead><tr><th>來源</th><th>模型採用口徑</th><th>日期／適用範圍</th></tr></thead><tbody>
+          <tr><th><a href="https://www.ird.gov.hk/eng/faq/avd.htm" target="_blank" rel="noopener noreferrer">稅務局：從價印花稅</a></th><td>住宅 Scale 2 稅表；計稅值取樓價及較高評定值</td><td>Excel 採用 2026-02-26 起稅表</td></tr>
+          <tr><th><a href="https://www.rvd.gov.hk/tc/faqs/progressive_rating_system.html" target="_blank" rel="noopener noreferrer">差餉物業估價署：累進差餉</a></th><td>住宅累進差餉，未扣一次性寬減</td><td>2025-01-01 起制度</td></tr>
+          <tr><th><a href="https://www.rvd.gov.hk/en/our_services/government_rent.html" target="_blank" rel="noopener noreferrer">差餉物業估價署：地租</a></th><td>依適用契約及 RV；基準比例可修改</td><td>須核對個別物業</td></tr>
+          <tr><th><a href="https://www.ird.gov.hk/eng/faq/pty.htm" target="_blank" rel="noopener noreferrer">稅務局：物業稅</a></th><td>普通個人物業稅，稅率與法定扣減可修改</td><td>模型基準 2026-09-16</td></tr>
+          <tr><th><a href="https://www.ird.gov.hk/eng/pdf/irsd119.pdf" target="_blank" rel="noopener noreferrer">稅務局：租約印花稅</a></th><td>普通固定月租、整月租期；稅基向上整百、稅額整元</td><td>Excel 核對日期 2026-09-19</td></tr>
+          <tr><th><a href="https://www.ird.gov.hk/eng/faq/sta.htm" target="_blank" rel="noopener noreferrer">稅務局：加蓋印花責任</a></th><td>業主分攤比例只屬約定假設；沒有計逾期罰款</td><td>不含頂手費、不定期或特殊豁免租約</td></tr>
+        </tbody></table></div>
+        <div class="footnote-box"><strong>輸入只在此瀏覽器保存。</strong> 計算在你的裝置執行，方案不會提交到伺服器。可下載 JSON 備份，再匯入另一個瀏覽器。清除瀏覽器資料後，本機保存的方案會消失。</div>
+      </section>
+    </main>
+    <footer><span>PROPERTY / CASHFLOW</span><span>年度現金流模型 · 金額為 HKD · 情境試算不等於市場估值</span></footer>
+  </div>
+  <noscript><p class="notice error">此計算器需要 JavaScript，請在瀏覽器開啟 JavaScript 後重新載入。</p></noscript>
+</body>
+</html>

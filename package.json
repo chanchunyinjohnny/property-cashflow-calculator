@@ -1,0 +1,13 @@
+{
+  "name": "property-cashflow-calculator",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "香港收租物業現金流及 IRR 計算器",
+  "scripts": {
+    "test": "node --test test_model.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
